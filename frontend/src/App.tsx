@@ -1,20 +1,30 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Video, VideoOff, Mic, MicOff, MonitorUp, PhoneOff, MessageSquare, 
-  FileText, CheckSquare, Settings, History, BarChart3, Users, 
-  LogOut, Lock, Plus, Search, FileDown, Play, CheckCircle2, Trash2, Send, Download
+  Video, VideoOff, Mic, MicOff, MonitorUp, 
+  CheckSquare, Settings, History, BarChart3, Users, 
+  LogOut, Plus, FileDown, Play, Trash2, Send, Download, Volume2, Sun, Moon
 } from 'lucide-react';
 import './App.css';
+import { supabase, isSupabaseConfigured, saveSupabaseKeys, clearSupabaseKeys } from './supabase';
+
 
 // TypeScript Interfaces
 interface Task {
   id: string;
   title: string;
   description: string;
-  status: 'todo' | 'in_progress' | 'review' | 'done';
+  status: 'todo' | 'in_progress' | 'done' | 'review';
   assignee: string;
   priority: 'low' | 'medium' | 'high';
   meetingId?: string;
+  reviewNotes?: string;
+}
+
+interface SessionLog {
+  id: string;
+  username: string;
+  action: 'login' | 'logout';
+  timestamp: string;
 }
 
 interface TranscriptMessage {
@@ -49,6 +59,14 @@ interface RecordingItem {
   date: string;
   url: string;
   duration: string;
+}
+
+interface ScheduledMeeting {
+  id: string;
+  title: string;
+  dateTime: string;
+  host: string;
+  isHostJoined: boolean;
 }
 
 // Avatar Logo SVGs representation mapping
@@ -178,12 +196,48 @@ const AVATAR_LOGOS = [
 
 export default function App() {
   // Authentication State
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true); // default true for demo
-  const [email, setEmail] = useState<string>('admin@zidio.com');
-  const [password, setPassword] = useState<string>('password');
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [email, setEmail] = useState<string>('');
+  const [password, setPassword] = useState<string>('');
   const [authError, setAuthError] = useState<string>('');
   const [isRegisterMode, setIsRegisterMode] = useState<boolean>(false);
-  const [username, setUsername] = useState<string>('John Doe');
+  const [username, setUsername] = useState<string>('');
+
+  // Position choices
+  const [position, setPosition] = useState<string>('Student');
+  const [customPosition, setCustomPosition] = useState<string>('');
+
+  const [scheduledMeetings, setScheduledMeetings] = useState<ScheduledMeeting[]>([]);
+  const [activeJoiningScheduledId, setActiveJoiningScheduledId] = useState<string | null>(null);
+  const [currentTime, setCurrentTime] = useState<number>(Date.now());
+  const [schedTitle, setSchedTitle] = useState<string>('');
+  const [schedDateTime, setSchedDateTime] = useState<string>('');
+
+  // Confirmation Modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    show: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+
+  // OTP Verification States
+  const [isOtpMode, setIsOtpMode] = useState<boolean>(false);
+  const [otpInput, setOtpInput] = useState<string>('');
+  const [generatedOtp, setGeneratedOtp] = useState<string>('');
+  const [otpTimer, setOtpTimer] = useState<number>(600); // 10 minutes in seconds
+  const [otpError, setOtpError] = useState<string>('');
+  const [resendCooldown, setResendCooldown] = useState<number>(0);
+
+  // Supabase Configuration UI
+  const [showSupaConfig, setShowSupaConfig] = useState<boolean>(false);
+  const [supaUrlInput, setSupaUrlInput] = useState<string>('');
+  const [supaKeyInput, setSupaKeyInput] = useState<string>('');
   
   // Custom Participant Avatar Index (F-01 addition)
   const [selectedAvatarIdx, setSelectedAvatarIdx] = useState<number>(0);
@@ -193,9 +247,50 @@ export default function App() {
 
   // Meeting Room State
   const [inActiveMeeting, setInActiveMeeting] = useState<boolean>(false);
-  const [meetingTitle, setMeetingTitle] = useState<string>('Enterprise AI Integration Align');
+  const [meetingTitle, setMeetingTitle] = useState<string>('');
+  const [meetingId, setMeetingId] = useState<string>('');
   const [showJoinSetupModal, setShowJoinSetupModal] = useState<boolean>(false);
   const [showScheduleModal, setShowScheduleModal] = useState<boolean>(false);
+
+  // Dark/Light Theme Mode
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem('intellmeet_theme');
+    return saved === 'dark';
+  });
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark-mode');
+      localStorage.setItem('intellmeet_theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark-mode');
+      localStorage.setItem('intellmeet_theme', 'light');
+    }
+  }, [isDarkMode]);
+
+  const toggleTheme = () => {
+    setIsDarkMode(prev => !prev);
+  };
+
+  // Session Logs
+  const [sessionLogs, setSessionLogs] = useState<SessionLog[]>(() => {
+    const saved = localStorage.getItem('intellmeet_session_logs');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const addSessionLog = (user: string, action: 'login' | 'logout') => {
+    const newLog: SessionLog = {
+      id: 'LOG-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+      username: user,
+      action,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString()
+    };
+    setSessionLogs(prev => {
+      const updated = [newLog, ...prev].slice(0, 50);
+      localStorage.setItem('intellmeet_session_logs', JSON.stringify(updated));
+      return updated;
+    });
+  };
 
   // Meeting Controls
   const [isMuted, setIsMuted] = useState<boolean>(false);
@@ -207,60 +302,27 @@ export default function App() {
   const [activeRightTab, setActiveRightTab] = useState<string>('transcript');
 
   // Dynamic Simulators / Mock Data State
-  const [transcript, setTranscript] = useState<TranscriptMessage[]>([
-    { id: '1', speaker: 'Sarah Jenkins (PM)', text: "Welcome team to the Q3 AI integration sync-up.", time: "10:00 AM" },
-    { id: '2', speaker: 'Alex Rivera (Dev)', text: "I've checked the API limits for Whisper. We should be good to proceed.", time: "10:01 AM" }
-  ]);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    { id: '1', sender: 'Sarah Jenkins', text: "Hello! Let's paste relevant links here.", time: "10:01 AM", avatarLogoIndex: 2 }
-  ]);
-  const [sharedNotes, setSharedNotes] = useState<string>(
-    "## Meeting Goals:\n- Review WebRTC WebSockets signaling latency\n- Confirm OpenAI transcription integration architecture\n- Plan Next Sprint Deliverables"
-  );
+  const [transcript, setTranscript] = useState<TranscriptMessage[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [sharedNotes, setSharedNotes] = useState<string>('');
   const [chatInput, setChatInput] = useState<string>('');
-  const [isTyping, setIsTyping] = useState<boolean>(false);
 
-  // Kanban Board State (Persisted in localStorage)
-  const [tasks, setTasks] = useState<Task[]>(() => {
-    const saved = localStorage.getItem('intellmeet_tasks');
-    return saved ? JSON.parse(saved) : [
-      { id: '1', title: 'Verify WebRTC connection latency', description: 'Test peer loopbacks across regions.', status: 'in_progress', assignee: 'Alex Rivera', priority: 'high' },
-      { id: '2', title: 'Configure Redis cache limits', description: 'Enable feed caching and session parameters.', status: 'todo', assignee: 'John Doe', priority: 'medium' },
-      { id: '3', title: 'Verify OAuth2 JWT refresh tokens', description: 'Ensure user sessions expire correctly.', status: 'done', assignee: 'Sarah Jenkins', priority: 'high' }
-    ];
-  });
+  // Kanban Board State
+  const [tasks, setTasks] = useState<Task[]>([]);
 
   // Action Items State in Active Meeting
-  const [meetingActions, setMeetingActions] = useState<string[]>([
-    "Configure Redis cache limits (Assignee: John Doe)",
-    "Verify WebRTC connection latency (Assignee: Alex Rivera)"
-  ]);
+  const [meetingActions, setMeetingActions] = useState<string[]>([]);
   const [actionTitleInput, setActionTitleInput] = useState<string>('');
-  const [actionAssigneeInput, setActionAssigneeInput] = useState<string>('John Doe');
+  const [actionAssigneeInput, setActionAssigneeInput] = useState<string>('Everyone');
+  const [actionDescriptionInput, setActionDescriptionInput] = useState<string>('');
+  const [actionTimelineInput, setActionTimelineInput] = useState<string>('now');
 
   // History State
-  const [historyList, setHistoryList] = useState<MeetingHistory[]>(() => {
-    const saved = localStorage.getItem('intellmeet_history');
-    return saved ? JSON.parse(saved) : [
-      {
-        id: 'MEET-872A',
-        title: 'V2.0 Deployment Architecture Review',
-        date: '2026-06-12',
-        duration: '45 mins',
-        participants: 5,
-        summary: 'Reviewed the production deployment targets including Prometheus orchestration, Kubernetes autoscaling limits, and Helm configuration charts. Confirmed Redis container limits and SSL endpoint secrets.',
-        actionItems: ['Configure Helm chart replica count limits', 'Update Grafana dashboard panels']
-      }
-    ];
-  });
+  const [historyList, setHistoryList] = useState<MeetingHistory[]>([]);
   const [historySearchQuery, setHistorySearchQuery] = useState<string>('');
 
   // Local Canvas Recording MOCK-RECORDER system
-  const [recordings, setRecordings] = useState<RecordingItem[]>(() => {
-    const saved = localStorage.getItem('intellmeet_recordings');
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [activeRecordingId, setActiveRecordingId] = useState<string | null>(null);
+  const [recordings, setRecordings] = useState<RecordingItem[]>([]);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunks = useRef<Blob[]>([]);
   const recordingStartTime = useRef<number>(0);
@@ -270,84 +332,736 @@ export default function App() {
   // Playback Modal State
   const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
   const [playbackTitle, setPlaybackTitle] = useState<string>('');
+  const [downloadQuality, setDownloadQuality] = useState<string>('720p');
 
   // Refs for drawing simulated video canvas streams
   const myVideoRef = useRef<HTMLCanvasElement | null>(null);
+  const hiddenVideoRef = useRef<HTMLVideoElement | null>(null);
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const recognitionRef = useRef<any>(null);
   const sarahVideoRef = useRef<HTMLCanvasElement | null>(null);
   const alexVideoRef = useRef<HTMLCanvasElement | null>(null);
   const animationFrameId = useRef<number | null>(null);
 
-  // Sync localStorage
+  // Sync recordings (always local)
   useEffect(() => {
-    localStorage.setItem('intellmeet_tasks', JSON.stringify(tasks));
-  }, [tasks]);
-
-  useEffect(() => {
-    localStorage.setItem('intellmeet_history', JSON.stringify(historyList));
-  }, [historyList]);
-
-  useEffect(() => {
-    localStorage.setItem('intellmeet_recordings', JSON.stringify(recordings));
+    localStorage.setItem('intellmeet_recordings_v2', JSON.stringify(recordings));
   }, [recordings]);
 
-  // Handle Auth
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (email === 'admin@zidio.com' && password === 'password') {
-      setIsAuthenticated(true);
-      setAuthError('');
-    } else {
-      setAuthError('Invalid credentials. Use admin@zidio.com / password.');
+  // Tick every 10 seconds to update scheduled meeting join button statuses
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Camera stream activation
+  useEffect(() => {
+    const startCamera = async () => {
+      if (inActiveMeeting && !isCamOff) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          localStreamRef.current = stream;
+          if (hiddenVideoRef.current) {
+            hiddenVideoRef.current.srcObject = stream;
+            hiddenVideoRef.current.play().catch(err => console.log("Video playback error:", err));
+          }
+        } catch (err) {
+          console.error("Camera access denied or error:", err);
+        }
+      } else {
+        if (localStreamRef.current) {
+          localStreamRef.current.getTracks().forEach(track => track.stop());
+          localStreamRef.current = null;
+        }
+        if (hiddenVideoRef.current) {
+          hiddenVideoRef.current.srcObject = null;
+        }
+      }
+    };
+
+    startCamera();
+
+    return () => {
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
+        localStreamRef.current = null;
+      }
+    };
+  }, [inActiveMeeting, isCamOff]);
+
+  // Camera preview setup modal stream activation
+  useEffect(() => {
+    let activeStream: MediaStream | null = null;
+
+    const setupPreview = async () => {
+      if (showJoinSetupModal && !isCamOff) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          activeStream = stream;
+          if (previewVideoRef.current) {
+            previewVideoRef.current.srcObject = stream;
+            previewVideoRef.current.play().catch(e => console.log("Preview video play error:", e));
+          }
+        } catch (err) {
+          console.error("Error setting up pre-join preview camera:", err);
+        }
+      } else {
+        if (previewVideoRef.current) {
+          previewVideoRef.current.srcObject = null;
+        }
+      }
+    };
+
+    setupPreview();
+
+    return () => {
+      if (activeStream) {
+        activeStream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [showJoinSetupModal, isCamOff]);
+
+  const playSoundTest = () => {
+    try {
+      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContext) return;
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(440, ctx.currentTime);
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.5);
+    } catch (e) {
+      console.error("Audio test error:", e);
     }
   };
 
-  const handleRegister = (e: React.FormEvent) => {
+  // Speech-to-Text Transcription integration
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      console.warn("Speech recognition is not supported in this browser.");
+      return;
+    }
+
+    if (inActiveMeeting && !isMuted) {
+      const rec = new SpeechRecognition();
+      rec.continuous = true;
+      rec.interimResults = false;
+      rec.lang = 'en-US';
+
+      rec.onresult = (event: any) => {
+        const lastResultIndex = event.resultIndex;
+        const text = event.results[lastResultIndex][0].transcript.trim();
+        if (text) {
+          const now = new Date();
+          let hours = now.getHours();
+          const minutes = now.getMinutes().toString().padStart(2, '0');
+          const ampm = hours >= 12 ? 'PM' : 'AM';
+          hours = hours % 12;
+          hours = hours ? hours : 12;
+          const formattedTime = `${hours}:${minutes} ${ampm}`;
+
+          setTranscript(prev => [
+            ...prev,
+            {
+              id: 'USER-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+              speaker: `${username} (You)`,
+              text,
+              time: formattedTime
+            }
+          ]);
+        }
+      };
+
+      rec.onerror = (event: any) => {
+        console.error("Speech recognition error:", event.error);
+      };
+
+      rec.onend = () => {
+        if (inActiveMeeting && !isMuted && recognitionRef.current === rec) {
+          try {
+            rec.start();
+          } catch (e) {
+            console.log("Error restarting speech recognition:", e);
+          }
+        }
+      };
+
+      recognitionRef.current = rec;
+      try {
+        rec.start();
+      } catch (e) {
+        console.log("Error starting speech recognition:", e);
+      }
+    } else {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          console.log("Error stopping speech recognition:", e);
+        }
+        recognitionRef.current = null;
+      }
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          console.log("Error stopping speech recognition:", e);
+        }
+        recognitionRef.current = null;
+      }
+    };
+  }, [inActiveMeeting, isMuted, username]);
+
+  // Check active Supabase session or fallback local storage session on mount
+  useEffect(() => {
+    const checkSession = async () => {
+      if (isSupabaseConfigured() && supabase) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          setIsAuthenticated(true);
+          setEmail(session.user.email || '');
+          setUsername(session.user.user_metadata?.name || 'User');
+          setPosition(session.user.user_metadata?.position || 'Student');
+        }
+      } else {
+        const savedSession = localStorage.getItem('intellmeet_session');
+        if (savedSession) {
+          const sessionData = JSON.parse(savedSession);
+          setIsAuthenticated(true);
+          setEmail(sessionData.email);
+          setUsername(sessionData.name);
+          setPosition(sessionData.position);
+        }
+      }
+    };
+    checkSession();
+  }, []);
+
+  // Fetch tasks and history when authenticated
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const loadData = async () => {
+      if (isSupabaseConfigured() && supabase) {
+        // Load tasks from Supabase
+        const { data: dbTasks, error: tasksErr } = await supabase
+          .from('tasks')
+          .select('*')
+          .order('created_at', { ascending: true });
+        
+        if (dbTasks) {
+          setTasks(dbTasks.map((t: any) => ({
+            id: t.id,
+            title: t.title,
+            description: t.description || '',
+            status: t.status,
+            assignee: t.assignee,
+            priority: t.priority,
+            reviewNotes: t.review_notes || ''
+          })));
+        } else {
+          console.error('Error loading tasks from Supabase:', tasksErr);
+        }
+
+        // Load meetings history from Supabase
+        const { data: dbMeetings, error: meetsErr } = await supabase
+          .from('meetings')
+          .select('*')
+          .order('date', { ascending: false });
+
+        if (dbMeetings) {
+          setHistoryList(dbMeetings.map((m: any) => ({
+            id: m.id,
+            title: m.title,
+            date: m.date,
+            duration: m.duration,
+            participants: m.participants,
+            summary: m.summary || '',
+            actionItems: m.action_items || []
+          })));
+        } else {
+          console.error('Error loading meetings from Supabase:', meetsErr);
+        }
+
+        // Load scheduled meetings from Supabase
+        const { data: dbScheduled, error: schedErr } = await supabase
+          .from('scheduled_meetings')
+          .select('*')
+          .order('date_time', { ascending: true });
+
+        if (dbScheduled) {
+          setScheduledMeetings(dbScheduled.map((s: any) => ({
+            id: s.id,
+            title: s.title,
+            dateTime: s.date_time,
+            host: s.host,
+            isHostJoined: s.is_host_joined
+          })));
+        } else {
+          console.error('Error loading scheduled meetings from Supabase:', schedErr);
+        }
+      } else {
+        // Local Mode load
+        const savedTasks = localStorage.getItem('intellmeet_tasks_v2');
+        setTasks(savedTasks ? JSON.parse(savedTasks) : []);
+
+        const savedHistory = localStorage.getItem('intellmeet_history_v2');
+        setHistoryList(savedHistory ? JSON.parse(savedHistory) : []);
+
+        const savedScheduled = localStorage.getItem('intellmeet_scheduled_v2');
+        setScheduledMeetings(savedScheduled ? JSON.parse(savedScheduled) : []);
+      }
+
+      // Load recordings (always local)
+      const savedRecs = localStorage.getItem('intellmeet_recordings_v2');
+      setRecordings(savedRecs ? JSON.parse(savedRecs) : []);
+    };
+
+    loadData();
+  }, [isAuthenticated]);
+
+  // OTP Countdown Timer Tick
+  useEffect(() => {
+    if (!isOtpMode) return;
+
+    const timer = setInterval(() => {
+      setOtpTimer(prev => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isOtpMode]);
+
+  // Resend cooldown timer tick
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+
+    const timer = setInterval(() => {
+      setResendCooldown(prev => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
+
+  // Handle Login
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsAuthenticated(true);
+    setAuthError('');
+
+    if (isSupabaseConfigured() && supabase) {
+      // 1. First verify email/password
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        setAuthError(error.message);
+        return;
+      }
+
+      if (data?.user) {
+        // Log out the temporary session immediately
+        await supabase.auth.signOut();
+        
+        // 2. Trigger email OTP
+        const { error: otpErr } = await supabase.auth.signInWithOtp({ email });
+        if (otpErr) {
+          setAuthError('Password verified, but failed to send OTP: ' + otpErr.message);
+        } else {
+          setIsOtpMode(true);
+          setOtpTimer(600);
+          setOtpInput('');
+          setResendCooldown(60);
+        }
+      }
+    } else {
+      // Local Mode Login
+      const usersRaw = localStorage.getItem('intellmeet_local_users') || '[]';
+      const localUsers = JSON.parse(usersRaw);
+      const matchedUser = localUsers.find((u: any) => u.email === email && u.password === password);
+
+      if (matchedUser) {
+        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+        setGeneratedOtp(otpCode);
+        setIsOtpMode(true);
+        setOtpTimer(600);
+        setOtpInput('');
+        setResendCooldown(60);
+        console.log(`[LOCAL DEV MODE] Generated Sign In OTP for ${email}: ${otpCode}`);
+      } else {
+        setAuthError('Invalid credentials. Check email/password or sign up.');
+      }
+    }
   };
 
-  const handleLogout = () => {
+  // Handle Register
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+
+    const finalPosition = position === 'Other' ? customPosition.trim() : position;
+    if (position === 'Other' && !finalPosition) {
+      setAuthError('Please enter your custom position/profession.');
+      return;
+    }
+
+    if (isSupabaseConfigured() && supabase) {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            name: username,
+            position: finalPosition
+          }
+        }
+      });
+
+      if (error) {
+        setAuthError(error.message);
+        return;
+      }
+
+      setAuthError('');
+      setIsRegisterMode(false);
+      setPassword('');
+      
+      // Auto login in Supabase mode
+      setIsAuthenticated(true);
+      setUsername(username);
+      setPosition(finalPosition);
+      addSessionLog(username, 'login');
+      alert('Registration successful! Welcome to IntellMeet.');
+    } else {
+      // Local Mode Signup
+      const usersRaw = localStorage.getItem('intellmeet_local_users') || '[]';
+      const localUsers = JSON.parse(usersRaw);
+      if (localUsers.some((u: any) => u.email === email)) {
+        setAuthError('User already exists in local sandbox.');
+        return;
+      }
+
+      localUsers.push({ email, password, name: username, position: finalPosition });
+      localStorage.setItem('intellmeet_local_users', JSON.stringify(localUsers));
+
+      // Save session object to local storage for persistence on page reload
+      const sessionObj = { email, name: username, position: finalPosition };
+      localStorage.setItem('intellmeet_session', JSON.stringify(sessionObj));
+
+      setAuthError('');
+      setIsRegisterMode(false);
+      setPassword('');
+
+      // Auto login in local mode
+      setIsAuthenticated(true);
+      setUsername(username);
+      setPosition(finalPosition);
+      addSessionLog(username, 'login');
+      alert('Registration successful! Welcome to IntellMeet.');
+    }
+  };
+
+  // Handle Verify OTP
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setOtpError('');
+
+    if (otpTimer === 0) {
+      setOtpError('OTP has expired (10 minutes limit exceeded). Please click Resend OTP.');
+      return;
+    }
+
+    if (isSupabaseConfigured() && supabase) {
+      const { data, error } = await supabase.auth.verifyOtp({
+        email,
+        token: otpInput,
+        type: 'email'
+      });
+
+      if (error) {
+        setOtpError(error.message);
+      } else if (data?.user) {
+        setIsAuthenticated(true);
+        setIsOtpMode(false);
+        const name = data.user.user_metadata?.name || 'User';
+        setUsername(name);
+        setPosition(data.user.user_metadata?.position || 'Student');
+        addSessionLog(name, 'login');
+      }
+    } else {
+      if (otpInput === generatedOtp) {
+        const usersRaw = localStorage.getItem('intellmeet_local_users') || '[]';
+        const localUsers = JSON.parse(usersRaw);
+        const matchedUser = localUsers.find((u: any) => u.email === email);
+
+        if (matchedUser) {
+          const sessionObj = { email: matchedUser.email, name: matchedUser.name, position: matchedUser.position };
+          localStorage.setItem('intellmeet_session', JSON.stringify(sessionObj));
+
+          setIsAuthenticated(true);
+          setUsername(matchedUser.name);
+          setPosition(matchedUser.position);
+          setIsOtpMode(false);
+          addSessionLog(matchedUser.name, 'login');
+        } else {
+          setOtpError('User matching credentials not found in local sandbox.');
+        }
+      } else {
+        setOtpError('Invalid OTP code. Please try again.');
+      }
+    }
+  };
+
+  // Handle Resend OTP
+  const handleResendOtp = async () => {
+    setOtpError('');
+    setOtpInput('');
+    setOtpTimer(600);
+    setResendCooldown(60);
+
+    if (isSupabaseConfigured() && supabase) {
+      const { error } = await supabase.auth.signInWithOtp({ email });
+      if (error) {
+        setOtpError('Failed to resend validation email: ' + error.message);
+      }
+    } else {
+      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+      setGeneratedOtp(otpCode);
+      console.log(`[LOCAL DEV MODE] Resent Sign In OTP for ${email}: ${otpCode}`);
+    }
+  };
+
+  // Handle Logout
+  const handleLogout = async () => {
+    addSessionLog(username || 'User', 'logout');
+    if (isSupabaseConfigured() && supabase) {
+      await supabase.auth.signOut();
+    }
+    localStorage.removeItem('intellmeet_session');
     setIsAuthenticated(false);
+    setEmail('');
+    setPassword('');
+    setUsername('');
+    setPosition('Student');
+    setCustomPosition('');
+    setTasks([]);
+    setHistoryList([]);
   };
 
   // Add a task in Kanban
-  const handleAddTask = (title: string, desc: string, assignee: string, priority: 'low'|'medium'|'high') => {
-    const newTask: Task = {
-      id: 'TASK-' + Math.random().toString(36).substr(2, 4).toUpperCase(),
+  const handleAddTask = async (title: string, desc: string, assignee: string, priority: 'low'|'medium'|'high') => {
+    const newTaskObj = {
       title,
       description: desc,
-      status: 'todo',
+      status: 'todo' as const,
       assignee,
       priority
     };
-    setTasks(prev => [...prev, newTask]);
+
+    if (isSupabaseConfigured() && supabase) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data, error } = await supabase
+          .from('tasks')
+          .insert([{ ...newTaskObj, user_id: user.id }])
+          .select();
+        
+        if (error) {
+          console.error('Error adding task to Supabase:', error);
+        } else if (data && data[0]) {
+          const t = data[0];
+          setTasks(prev => [...prev, {
+            id: t.id,
+            title: t.title,
+            description: t.description,
+            status: t.status,
+            assignee: t.assignee,
+            priority: t.priority
+          }]);
+        }
+      }
+    } else {
+      // Local Mode
+      const newTask: Task = {
+        id: 'TASK-' + Math.random().toString(36).substr(2, 4).toUpperCase(),
+        ...newTaskObj
+      };
+      setTasks(prev => {
+        const updated = [...prev, newTask];
+        localStorage.setItem('intellmeet_tasks_v2', JSON.stringify(updated));
+        return updated;
+      });
+    }
   };
 
-  // Move Kanban card status
-  const cycleTaskStatus = (taskId: string) => {
-    setTasks(prev => prev.map(t => {
-      if (t.id === taskId) {
-        const order: Task['status'][] = ['todo', 'in_progress', 'review', 'done'];
-        const nextIdx = (order.indexOf(t.status) + 1) % order.length;
-        return { ...t, status: order[nextIdx] };
+  // Move Kanban card status explicitly
+  const moveTask = async (taskId: string, newStatus: Task['status'], clearReviewNotes = false) => {
+    if (isSupabaseConfigured() && supabase) {
+      const updateData: any = { status: newStatus };
+      if (clearReviewNotes) {
+        updateData.review_notes = '';
       }
-      return t;
-    }));
+      const { error } = await supabase
+        .from('tasks')
+        .update(updateData)
+        .eq('id', taskId);
+
+      if (error) {
+        console.error('Error updating task status in Supabase:', error);
+      } else {
+        setTasks(prev => prev.map(t => 
+          t.id === taskId 
+            ? { ...t, status: newStatus, reviewNotes: clearReviewNotes ? '' : t.reviewNotes } 
+            : t
+        ));
+      }
+    } else {
+      // Local Mode
+      setTasks(prev => {
+        const updated = prev.map(t => 
+          t.id === taskId 
+            ? { ...t, status: newStatus, reviewNotes: clearReviewNotes ? '' : t.reviewNotes } 
+            : t
+        );
+        localStorage.setItem('intellmeet_tasks_v2', JSON.stringify(updated));
+        return updated;
+      });
+    }
   };
+
+  const updateReviewNotes = async (taskId: string, notes: string) => {
+    if (isSupabaseConfigured() && supabase) {
+      const { error } = await supabase
+        .from('tasks')
+        .update({ review_notes: notes })
+        .eq('id', taskId);
+
+      if (error) {
+        console.error('Error updating review notes in Supabase:', error);
+      } else {
+        setTasks(prev => prev.map(t => t.id === taskId ? { ...t, reviewNotes: notes } : t));
+      }
+    } else {
+      // Local Mode
+      setTasks(prev => {
+        const updated = prev.map(t => t.id === taskId ? { ...t, reviewNotes: notes } : t);
+        localStorage.setItem('intellmeet_tasks_v2', JSON.stringify(updated));
+        return updated;
+      });
+    }
+  };
+
+  const requestConfirmation = (title: string, message: string, onConfirm: () => void) => {
+    setConfirmModal({
+      show: true,
+      title,
+      message,
+      onConfirm: () => {
+        onConfirm();
+        setConfirmModal(prev => ({ ...prev, show: false }));
+      }
+    });
+  };
+
+  const handlePendingClick = (t: Task) => {
+    requestConfirmation(
+      "Confirm Action",
+      "Do you want to continue this project or something like this?",
+      () => moveTask(t.id, 'in_progress')
+    );
+  };
+
+  const handleOngoingClick = (t: Task) => {
+    requestConfirmation(
+      "Confirm Completion",
+      "Have you completed this?",
+      () => moveTask(t.id, 'done')
+    );
+  };
+
+  const handleBackToTodoClick = (t: Task) => {
+    requestConfirmation(
+      "Confirm Return",
+      "Do you want this task to go to the TODO list again?",
+      () => moveTask(t.id, 'todo')
+    );
+  };
+
+  const handleCompletedClick = (t: Task) => {
+    moveTask(t.id, 'review');
+  };
+
+  const handleBackToProgressClick = (t: Task) => {
+    requestConfirmation(
+      "Confirm Return",
+      "Do you want this project to go back to the progress column?",
+      () => moveTask(t.id, 'in_progress', true)
+    );
+  };
+
 
   // Create action item from meeting room
   const handleAddActionItem = () => {
     if (!actionTitleInput.trim()) return;
-    const itemString = `${actionTitleInput.trim()} (Assignee: ${actionAssigneeInput})`;
+    
+    // Format timeline label
+    let timelineText = 'Do now';
+    if (actionTimelineInput === '30mins') timelineText = 'Due in 30 minutes';
+    else if (actionTimelineInput === '1hour') timelineText = 'Due in 1 hour';
+    else if (actionTimelineInput === 'post') timelineText = 'Post-meeting task';
+
+    const desc = actionDescriptionInput.trim() || 'No description provided';
+    
+    const itemString = `${actionTitleInput.trim()} - ${desc} (Assignee: ${actionAssigneeInput}, Timeline: ${timelineText})`;
     setMeetingActions(prev => [...prev, itemString]);
     
-    // Auto-create on the Kanban board
-    handleAddTask(actionTitleInput, 'Created during meeting: ' + meetingTitle, actionAssigneeInput, 'high');
+    // Auto-create on the Task Management Hub
+    handleAddTask(actionTitleInput.trim(), `${desc} (Timeline: ${timelineText})`, actionAssigneeInput, 'high');
     
+    // Post to Real-time Chat
+    const chatText = `📋 New Task Assigned: ${actionTitleInput.trim()}\nDescription: ${desc}\nAssignee: ${actionAssigneeInput}\nTimeline: ${timelineText}`;
+    const taskMsg: ChatMessage = {
+      id: 'CHAT-TASK-' + Date.now(),
+      sender: username,
+      text: chatText,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      avatarLogoIndex: selectedAvatarIdx
+    };
+    setChatMessages(prev => [...prev, taskMsg]);
+
+    // Clear form inputs
     setActionTitleInput('');
+    setActionDescriptionInput('');
+    setActionTimelineInput('now');
+    setActionAssigneeInput('Everyone');
   };
 
-  // Send Chat message and simulate AI/teammate responses
+  // Send Chat message
   const handleSendChat = () => {
     if (!chatInput.trim()) return;
     const userMsg: ChatMessage = {
@@ -359,41 +1073,44 @@ export default function App() {
     };
     setChatMessages(prev => [...prev, userMsg]);
     setChatInput('');
-
-    // Simulate Teammate Typing and Response
-    setIsTyping(true);
-    setTimeout(() => {
-      setIsTyping(false);
-      const responses = [
-        "That sounds like a solid plan. I will start testing the loopbacks.",
-        "I've updated the task description in our sprint board.",
-        "Could you clarify the database cluster specifications for that?",
-        "Agree! We should definitely cache those API endpoints."
-      ];
-      const randomReply = responses[Math.floor(Math.random() * responses.length)];
-      const names = ["Sarah Jenkins", "Alex Rivera"];
-      const logos = [2, 1]; // indexes of girl 1 and boy 2
-      const selectIdx = Math.floor(Math.random() * names.length);
-      const randomName = names[selectIdx];
-      const randomLogo = logos[selectIdx];
-      
-      const teamMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        sender: randomName,
-        text: randomReply,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        avatarLogoIndex: randomLogo
-      };
-      setChatMessages(prev => [...prev, teamMsg]);
-    }, 2000);
   };
 
   // Start Meeting Room & Draw WebRTC Simulated Canvas Loops
-  const startMeeting = (title: string) => {
+  const startMeeting = async (title: string) => {
     setMeetingTitle(title || 'General Team Sync');
+    
+    const rand1 = Math.random().toString(36).substr(2, 4).toUpperCase();
+    const rand2 = Math.random().toString(36).substr(2, 4).toUpperCase();
+    setMeetingId(`MEET-${rand1}-${rand2}`);
+    
     setInActiveMeeting(true);
     setCurrentTab('meeting');
     setShowJoinSetupModal(false);
+
+    if (activeJoiningScheduledId) {
+      const targetId = activeJoiningScheduledId;
+      setActiveJoiningScheduledId(null);
+
+      if (isSupabaseConfigured() && supabase) {
+        const { error } = await supabase
+          .from('scheduled_meetings')
+          .update({ is_host_joined: true })
+          .eq('id', targetId);
+
+        if (error) {
+          console.error('Error updating scheduled meeting in Supabase:', error);
+        } else {
+          setScheduledMeetings(prev => prev.map(m => m.id === targetId ? { ...m, isHostJoined: true } : m));
+        }
+      } else {
+        // Local Mode
+        setScheduledMeetings(prev => {
+          const updated = prev.map(m => m.id === targetId ? { ...m, isHostJoined: true } : m);
+          localStorage.setItem('intellmeet_scheduled_v2', JSON.stringify(updated));
+          return updated;
+        });
+      }
+    }
   };
 
   // Canvas Mixer and Video Recorder logic (Uses Localhost browser storage)
@@ -512,54 +1229,66 @@ export default function App() {
     setIsRecording(false);
   };
 
-  const endMeeting = () => {
+  const endMeeting = async () => {
     if (isRecording) {
       stopRecording();
     }
     
-    // Save to History before closing
-    const newHistory: MeetingHistory = {
-      id: 'MEET-' + Math.random().toString(36).substr(2, 4).toUpperCase(),
+    const newHistoryObj = {
       title: meetingTitle,
       date: new Date().toISOString().split('T')[0],
       duration: '10 mins',
       participants: 3,
       summary: 'AI-Generated Summary: Meeting regarding ' + meetingTitle + '. Discussed real-time collaborations. Notes review contents: ' + sharedNotes.substring(0, 100) + '...',
-      actionItems: meetingActions
+      action_items: meetingActions
     };
-    setHistoryList(prev => [newHistory, ...prev]);
+
+    if (isSupabaseConfigured() && supabase) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data, error } = await supabase
+          .from('meetings')
+          .insert([{ ...newHistoryObj, user_id: user.id }])
+          .select();
+        
+        if (error) {
+          console.error('Error inserting meeting in Supabase:', error);
+        } else if (data && data[0]) {
+          const m = data[0];
+          setHistoryList(prev => [{
+            id: m.id,
+            title: m.title,
+            date: m.date,
+            duration: m.duration,
+            participants: m.participants,
+            summary: m.summary,
+            actionItems: m.action_items
+          }, ...prev]);
+        }
+      }
+    } else {
+      // Local Mode
+      const newHistory: MeetingHistory = {
+        id: 'MEET-' + Math.random().toString(36).substr(2, 4).toUpperCase(),
+        title: newHistoryObj.title,
+        date: newHistoryObj.date,
+        duration: newHistoryObj.duration,
+        participants: newHistoryObj.participants,
+        summary: newHistoryObj.summary,
+        actionItems: newHistoryObj.action_items
+      };
+      setHistoryList(prev => {
+        const updated = [newHistory, ...prev];
+        localStorage.setItem('intellmeet_history_v2', JSON.stringify(updated));
+        return updated;
+      });
+    }
+
     setInActiveMeeting(false);
     setCurrentTab('dashboard');
   };
 
-  // Simulated Speech-to-Text Transcription Generator Loop
-  useEffect(() => {
-    if (!inActiveMeeting) return;
-    
-    const phrases = [
-      { speaker: "Sarah Jenkins (PM)", text: "Let's make sure the MERN folder structure follows clean principles." },
-      { speaker: "Alex Rivera (Dev)", text: "Agreed. Controllers calling services, and services querying repositories." },
-      { speaker: "Sarah Jenkins (PM)", text: "Excellent. Let's make sure we also add rate limiters and error handlers." },
-      { speaker: "Alex Rivera (Dev)", text: "I'll handle the token validation and redis feed caching routes." },
-      { speaker: "Sarah Jenkins (PM)", text: "Perfect. We need high availability. Docker setup is done." }
-    ];
 
-    let index = 0;
-    const interval = setInterval(() => {
-      if (index >= phrases.length) return;
-      const nextPhrase = phrases[index];
-      const newMsg: TranscriptMessage = {
-        id: Math.random().toString(),
-        speaker: nextPhrase.speaker,
-        text: nextPhrase.text,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setTranscript(prev => [...prev, newMsg]);
-      index++;
-    }, 10000); // add a transcript line every 10 seconds
-
-    return () => clearInterval(interval);
-  }, [inActiveMeeting]);
 
   // Video Streaming Loop Simulator on HTML Canvas
   useEffect(() => {
@@ -580,19 +1309,38 @@ export default function App() {
         if (ctx) {
           const w = myVideoRef.current.width;
           const h = myVideoRef.current.height;
-          // Clear
-          ctx.fillStyle = '#0f172a';
-          ctx.fillRect(0, 0, w, h);
           
-          // Draw a pulsating circle representing user voice
-          const pulse = Math.sin(frame * 0.05) * 15 + 40;
-          ctx.beginPath();
-          ctx.arc(w / 2, h / 2, pulse, 0, Math.PI * 2);
-          ctx.fillStyle = isMuted ? '#475569' : 'rgba(2, 132, 199, 0.2)';
-          ctx.fill();
-          ctx.strokeStyle = isMuted ? '#94a3b8' : '#0284c7';
-          ctx.lineWidth = 3;
-          ctx.stroke();
+          if (hiddenVideoRef.current && hiddenVideoRef.current.readyState >= 2) {
+            const video = hiddenVideoRef.current;
+            const vw = video.videoWidth;
+            const vh = video.videoHeight;
+            const videoRatio = vw / vh;
+            const canvasRatio = w / h;
+            let sx = 0, sy = 0, sw = vw, sh = vh;
+            
+            if (videoRatio > canvasRatio) {
+              sw = vh * canvasRatio;
+              sx = (vw - sw) / 2;
+            } else {
+              sh = vw / canvasRatio;
+              sy = (vh - sh) / 2;
+            }
+            ctx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
+          } else {
+            // Clear
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, w, h);
+            
+            // Draw a pulsating circle representing user voice
+            const pulse = Math.sin(frame * 0.05) * 15 + 40;
+            ctx.beginPath();
+            ctx.arc(w / 2, h / 2, pulse, 0, Math.PI * 2);
+            ctx.fillStyle = isMuted ? '#475569' : 'rgba(2, 132, 199, 0.2)';
+            ctx.fill();
+            ctx.strokeStyle = isMuted ? '#94a3b8' : '#0284c7';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+          }
 
           // Label text
           ctx.fillStyle = '#ffffff';
@@ -717,6 +1465,98 @@ export default function App() {
     document.body.removeChild(element);
   };
 
+  const getButtonStatus = (dateTimeStr: string) => {
+    const scheduledTime = new Date(dateTimeStr).getTime();
+    const diff = scheduledTime - currentTime;
+    const fiveMinutesInMs = 5 * 60 * 1000;
+    return diff <= fiveMinutesInMs;
+  };
+
+  const handleScheduleMeeting = async (title: string, dateTimeStr: string) => {
+    if (!title.trim() || !dateTimeStr.trim()) return;
+
+    const newMeetingObj = {
+      title: title.trim(),
+      date_time: new Date(dateTimeStr).toISOString(),
+      host: username || 'User',
+      is_host_joined: false
+    };
+
+    if (isSupabaseConfigured() && supabase) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data, error } = await supabase
+          .from('scheduled_meetings')
+          .insert([{
+            title: newMeetingObj.title,
+            date_time: newMeetingObj.date_time,
+            host: newMeetingObj.host,
+            is_host_joined: newMeetingObj.is_host_joined,
+            user_id: user.id
+          }])
+          .select();
+        
+        if (error) {
+          console.error('Error scheduling meeting in Supabase:', error);
+        } else if (data && data[0]) {
+          const s = data[0];
+          setScheduledMeetings(prev => [...prev, {
+            id: s.id,
+            title: s.title,
+            dateTime: s.date_time,
+            host: s.host,
+            isHostJoined: s.is_host_joined
+          }]);
+        }
+      }
+    } else {
+      // Local Mode
+      const newSched: ScheduledMeeting = {
+        id: 'SCHED-' + Math.random().toString(36).substr(2, 4).toUpperCase(),
+        title: newMeetingObj.title,
+        dateTime: newMeetingObj.date_time,
+        host: newMeetingObj.host,
+        isHostJoined: newMeetingObj.is_host_joined
+      };
+      setScheduledMeetings(prev => {
+        const updated = [...prev, newSched];
+        localStorage.setItem('intellmeet_scheduled_v2', JSON.stringify(updated));
+        return updated;
+      });
+    }
+  };
+
+  const getActiveMeetings = () => {
+    const list: Array<{ id: string; title: string; host: string; isScheduled: boolean }> = [];
+    
+    // Add started scheduled meetings
+    scheduledMeetings.forEach(m => {
+      if (m.isHostJoined) {
+        list.push({
+          id: m.id,
+          title: m.title,
+          host: m.host,
+          isScheduled: true
+        });
+      }
+    });
+
+    // Add current active room if it's an instant meeting (i.e. title doesn't match any active scheduled meeting)
+    if (inActiveMeeting) {
+      const isRepresented = list.some(m => m.title === meetingTitle);
+      if (!isRepresented) {
+        list.push({
+          id: 'INSTANT-ROOM',
+          title: meetingTitle,
+          host: username || 'User',
+          isScheduled: false
+        });
+      }
+    }
+
+    return list;
+  };
+
   const handleOpenPlayback = (rec: RecordingItem) => {
     setPlaybackUrl(rec.url);
     setPlaybackTitle(rec.title);
@@ -727,67 +1567,269 @@ export default function App() {
   };
 
   if (!isAuthenticated) {
+    const formattedTimer = `${Math.floor(otpTimer / 60).toString().padStart(2, '0')}:${(otpTimer % 60).toString().padStart(2, '0')}`;
+
     return (
       <div className="auth-container">
-        <div className="auth-card 3d-effect">
+        <div className="auth-card 3d-effect" style={{ position: 'relative' }}>
+          {/* Supabase Config Toggle Button */}
+          <button 
+            className="supabase-config-toggle" 
+            onClick={() => {
+              setSupaUrlInput(localStorage.getItem('INTELLMEET_SUPABASE_URL') || '');
+              setSupaKeyInput(localStorage.getItem('INTELLMEET_SUPABASE_ANON_KEY') || '');
+              setShowSupaConfig(true);
+            }}
+            title="Configure Supabase"
+          >
+            <Settings size={20} />
+          </button>
+
           <div className="auth-logo">
             <div className="auth-logo-icon">
               <Video size={24} />
             </div>
             <span className="logo-text" style={{color: 'var(--text-primary)'}}>IntellMeet</span>
           </div>
-          <h2 className="auth-title">{isRegisterMode ? 'Create Account' : 'Sign In'}</h2>
-          <p className="auth-subtitle">AI-Powered Enterprise Collaboration</p>
-          
-          <form onSubmit={isRegisterMode ? handleRegister : handleLogin}>
-            {isRegisterMode && (
-              <div className="form-group">
-                <label className="form-label">Full Name</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  value={username} 
-                  onChange={(e) => setUsername(e.target.value)} 
-                  required 
-                />
+
+          {/* Connection Mode Indicator */}
+          {isSupabaseConfigured() ? (
+            <div className="connection-indicator supabase">
+              <span className="indicator-dot"></span>
+              Supabase Connected
+            </div>
+          ) : (
+            <div className="connection-indicator local">
+              <span className="indicator-dot"></span>
+              Local Sandbox Mode
+            </div>
+          )}
+
+          {isOtpMode ? (
+            <div>
+              <h2 className="auth-title">Verify Registration</h2>
+              <p className="auth-subtitle" style={{ marginBottom: '1.5rem' }}>
+                We've sent a 6-digit confirmation code to <b>{email}</b>. Please enter it below.
+              </p>
+
+              {/* Developer OTP Helper Banner */}
+              {!isSupabaseConfigured() && (
+                <div style={{
+                  backgroundColor: '#fffbeb',
+                  border: '1px dashed #f59e0b',
+                  borderRadius: '8px',
+                  padding: '0.75rem',
+                  fontSize: '0.825rem',
+                  color: '#b45309',
+                  textAlign: 'center',
+                  marginBottom: '1.25rem'
+                }}>
+                  🔑 <b>Dev Mode:</b> Enter OTP code <b>{generatedOtp}</b> to proceed.
+                </div>
+              )}
+
+              <div className="otp-timer-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Code Expires In:</span>
+                <div className={`otp-timer ${otpTimer === 0 ? 'expired' : ''}`}>
+                  {formattedTimer}
+                </div>
               </div>
-            )}
-            <div className="form-group">
-              <label className="form-label">Email Address</label>
-              <input 
-                type="email" 
-                className="form-input" 
-                value={email} 
-                onChange={(e) => setEmail(e.target.value)} 
-                placeholder="admin@zidio.com"
-                required 
-              />
+
+              <form onSubmit={handleVerifyOtp}>
+                <div className="form-group">
+                  <label className="form-label" style={{ textAlign: 'center' }}>6-Digit Verification OTP</label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    value={otpInput} 
+                    onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="Enter 6-digit code"
+                    style={{ textAlign: 'center', letterSpacing: '0.25em', fontSize: '1.125rem', fontWeight: 600 }}
+                    required 
+                  />
+                </div>
+
+                {otpError && <p style={{color: 'var(--color-danger)', fontSize: '0.825rem', marginBottom: '1rem', textAlign: 'center'}}>{otpError}</p>}
+
+                <button type="submit" className="btn btn-primary w-full mt-4" disabled={otpTimer === 0}>
+                  Verify & Log In
+                </button>
+              </form>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.825rem', marginTop: '1.5rem' }}>
+                <span className="auth-toggle-link" onClick={() => setIsOtpMode(false)}>
+                  Back to signup
+                </span>
+                <div>
+                  {resendCooldown > 0 ? (
+                    <span style={{ color: 'var(--text-muted)' }}>Resend code in {resendCooldown}s</span>
+                  ) : (
+                    <button className="resend-btn" onClick={handleResendOtp}>
+                      Resend OTP
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="form-group">
-              <label className="form-label">Password</label>
-              <input 
-                type="password" 
-                className="form-input" 
-                value={password} 
-                onChange={(e) => setPassword(e.target.value)} 
-                placeholder="password"
-                required 
-              />
+          ) : (
+            <div>
+              <h2 className="auth-title">{isRegisterMode ? 'Create Account' : 'Sign In'}</h2>
+              <p className="auth-subtitle">AI-Powered Enterprise Collaboration</p>
+
+              <form onSubmit={isRegisterMode ? handleRegister : handleLogin}>
+                {isRegisterMode && (
+                  <>
+                    <div className="form-group">
+                      <label className="form-label">Full Name</label>
+                      <input 
+                        type="text" 
+                        className="form-input" 
+                        value={username} 
+                        onChange={(e) => setUsername(e.target.value)} 
+                        placeholder="Enter full name"
+                        required 
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Position / Profession</label>
+                      <select 
+                        className="form-input" 
+                        value={position} 
+                        onChange={(e) => setPosition(e.target.value)}
+                        required
+                      >
+                        <option value="Student">Student</option>
+                        <option value="Working Professional">Working Professional</option>
+                        <option value="Product Manager">Product Manager</option>
+                        <option value="Software Engineer">Software Engineer</option>
+                        <option value="System Administrator">System Administrator</option>
+                        <option value="Researcher / Academic">Researcher / Academic</option>
+                        <option value="Other">Other (Custom profession)</option>
+                      </select>
+                    </div>
+
+                    {position === 'Other' && (
+                      <div className="form-group animate-fade-in">
+                        <label className="form-label">Specify Position</label>
+                        <input 
+                          type="text" 
+                          className="form-input" 
+                          value={customPosition} 
+                          onChange={(e) => setCustomPosition(e.target.value)} 
+                          placeholder="e.g. Product Designer" 
+                          required 
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+                
+                <div className="form-group">
+                  <label className="form-label">Email Address</label>
+                  <input 
+                    type="email" 
+                    className="form-input" 
+                    value={email} 
+                    onChange={(e) => setEmail(e.target.value)} 
+                    placeholder="Enter email address"
+                    required 
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Password</label>
+                  <input 
+                    type="password" 
+                    className="form-input" 
+                    value={password} 
+                    onChange={(e) => setPassword(e.target.value)} 
+                    placeholder="Enter password"
+                    required 
+                  />
+                </div>
+
+                {authError && <p style={{color: 'var(--color-danger)', fontSize: '0.825rem', marginBottom: '1rem'}}>{authError}</p>}
+                
+                <button type="submit" className="btn btn-primary w-full mt-4">
+                  {isRegisterMode ? 'Register & Verify' : 'Login to Workspace'}
+                </button>
+              </form>
+
+              <p className="auth-toggle">
+                {isRegisterMode ? 'Already have an account? ' : 'Need a workspace account? '}
+                <span className="auth-toggle-link" onClick={() => {
+                  setAuthError('');
+                  setIsRegisterMode(!isRegisterMode);
+                }}>
+                  {isRegisterMode ? 'Sign In' : 'Sign Up'}
+                </span>
+              </p>
             </div>
-            {authError && <p style={{color: 'var(--color-danger)', fontSize: '0.825rem', marginBottom: '1rem'}}>{authError}</p>}
-            
-            <button type="submit" className="btn btn-primary w-full mt-4">
-              {isRegisterMode ? 'Register' : 'Login to Workspace'}
-            </button>
-          </form>
-          
-          <p className="auth-toggle">
-            {isRegisterMode ? 'Already have an account? ' : 'Need an enterprise account? '}
-            <span className="auth-toggle-link" onClick={() => setIsRegisterMode(!isRegisterMode)}>
-              {isRegisterMode ? 'Sign In' : 'Sign Up'}
-            </span>
-          </p>
+          )}
         </div>
+
+        {/* Supabase Key Settings Modal */}
+        {showSupaConfig && (
+          <div className="modal-overlay" style={{ zIndex: 9999 }}>
+            <div className="modal-content 3d-effect" style={{ maxWidth: '500px' }}>
+              <div className="modal-header">
+                <h3>Supabase Connection Settings</h3>
+              </div>
+              <div className="modal-body">
+                <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
+                  Paste your Supabase API keys to store tasks, sessions, and histories in your cloud database. If cleared, the app falls back to Local Sandbox mode.
+                </p>
+
+                <div className="form-group">
+                  <label className="form-label">Supabase URL (Reference `API` Settings)</label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    value={supaUrlInput} 
+                    onChange={(e) => setSupaUrlInput(e.target.value)}
+                    placeholder="https://your-project.supabase.co"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Supabase Anon Key</label>
+                  <input 
+                    type="password" 
+                    className="form-input" 
+                    value={supaKeyInput} 
+                    onChange={(e) => setSupaKeyInput(e.target.value)}
+                    placeholder="eyJhbGciOi..."
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                {isSupabaseConfigured() && (
+                  <button 
+                    className="btn btn-danger 3d-button mr-auto" 
+                    onClick={() => {
+                      clearSupabaseKeys();
+                      setShowSupaConfig(false);
+                    }}
+                  >
+                    Disconnect Supabase
+                  </button>
+                )}
+                <button className="btn btn-secondary 3d-button" onClick={() => setShowSupaConfig(false)}>Cancel</button>
+                <button 
+                  className="btn btn-primary 3d-button" 
+                  onClick={() => {
+                    saveSupabaseKeys(supaUrlInput, supaKeyInput);
+                    setShowSupaConfig(false);
+                  }}
+                  disabled={!supaUrlInput.trim() || !supaKeyInput.trim()}
+                >
+                  Save & Connect
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -796,11 +1838,40 @@ export default function App() {
     <div className="app-container">
       {/* Sidebar - 20% Black */}
       <aside className="sidebar">
-        <div className="logo-section">
-          <div className="logo-icon">
-            <Video size={18} />
+        <div className="logo-section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div className="logo-icon">
+              <Video size={18} />
+            </div>
+            <span className="logo-text">IntellMeet</span>
           </div>
-          <span className="logo-text">IntellMeet</span>
+          <button 
+            className="theme-toggle-btn"
+            onClick={toggleTheme}
+            title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '6px',
+              borderRadius: '50%',
+              transition: 'background-color 0.2s, color 0.2s',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)';
+              e.currentTarget.style.color = 'var(--text-primary)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+              e.currentTarget.style.color = 'var(--text-secondary)';
+            }}
+          >
+            {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
         </div>
         
         <nav className="sidebar-nav">
@@ -827,7 +1898,7 @@ export default function App() {
             onClick={() => setCurrentTab('kanban')}
           >
             <CheckSquare size={18} />
-            <span>Project Kanban</span>
+            <span>Task Management</span>
           </button>
 
           <button 
@@ -861,7 +1932,7 @@ export default function App() {
           </div>
           <div className="user-info">
             <span className="user-name">{username}</span>
-            <span className="user-role">Enterprise Admin</span>
+            <span className="user-role">{position}</span>
           </div>
           <button className="logout-btn" onClick={handleLogout} title="Log Out">
             <LogOut size={18} />
@@ -880,7 +1951,6 @@ export default function App() {
             <div className="workspace-header">
               <div>
                 <h1 className="workspace-title">Welcome Back, {username}!</h1>
-                <p style={{color: 'var(--text-secondary)'}}>Zidio Development Workspace Portal • March 2026</p>
               </div>
               <div className="flex gap-2">
                 <button className="btn btn-secondary 3d-button" onClick={() => setShowScheduleModal(true)}>Schedule Meeting</button>
@@ -888,51 +1958,89 @@ export default function App() {
               </div>
             </div>
 
-            {/* Quick Stats Grid */}
-            <div className="dashboard-grid mb-4">
-              <div className="dashboard-card col-3 3d-effect">
-                <span className="stat-label">Scheduled Meetings</span>
-                <div className="stat-value">3</div>
+            {/* Scheduled Meetings full-width block */}
+            <div className="dashboard-card col-12 3d-effect mb-4">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h3 className="card-title" style={{ margin: 0 }}>📅 Scheduled Meetings</h3>
+                <span className="badge badge-blue">{scheduledMeetings.filter(m => !m.isHostJoined).length} Scheduled</span>
               </div>
-              <div className="dashboard-card col-3 3d-effect">
-                <span className="stat-label">Pending Action Items</span>
-                <div className="stat-value">
-                  {tasks.filter(t => t.status !== 'done').length}
-                </div>
-              </div>
-              <div className="dashboard-card col-3 3d-effect">
-                <span className="stat-label">Recordings Saved</span>
-                <div className="stat-value">{recordings.length}</div>
-              </div>
-              <div className="dashboard-card col-3 3d-effect">
-                <span className="stat-label">AI Summary Accuracy</span>
-                <div className="stat-value">92.4%</div>
+              <div className="meeting-list">
+                {scheduledMeetings.filter(m => !m.isHostJoined).length > 0 ? (
+                  scheduledMeetings.filter(m => !m.isHostJoined).map(meet => {
+                    const isEnabled = getButtonStatus(meet.dateTime);
+                    return (
+                      <div key={meet.id} className="meeting-item" style={{ marginBottom: '1rem' }}>
+                        <div className="meeting-info">
+                          <div className="meeting-icon" style={{ backgroundColor: isEnabled ? 'var(--color-primary)' : '#94a3b8' }}>
+                            <History size={20} />
+                          </div>
+                          <div className="meeting-details">
+                            <h4>{meet.title}</h4>
+                            <p>Host: {meet.host} • Scheduled: {new Date(meet.dateTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                          </div>
+                        </div>
+                        <div>
+                          <button 
+                            className={`btn 3d-button ${isEnabled ? 'btn-primary' : 'btn-secondary'}`}
+                            disabled={!isEnabled}
+                            onClick={() => {
+                              setMeetingTitle(meet.title);
+                              setActiveJoiningScheduledId(meet.id);
+                              setShowJoinSetupModal(true);
+                            }}
+                            style={{ 
+                              opacity: isEnabled ? 1 : 0.6,
+                              cursor: isEnabled ? 'pointer' : 'not-allowed'
+                            }}
+                          >
+                            Join Room
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)', border: '1px dashed var(--color-border)', borderRadius: '8px' }}>
+                    No scheduled meetings. Click "Schedule Meeting" in the header to plan one.
+                  </div>
+                )}
               </div>
             </div>
 
             <div className="dashboard-grid">
               {/* Active Meetings List */}
               <div className="dashboard-card col-8 3d-effect">
-                <h3 className="card-title">🚀 Join Active Meetings</h3>
+                <h3 className="card-title">🚀 Active Meetings</h3>
                 <div className="meeting-list">
-                  <div className="meeting-item">
-                    <div className="meeting-info">
-                      <div className="meeting-icon">
-                        <Video size={24} />
+                  {getActiveMeetings().length > 0 ? (
+                    getActiveMeetings().map(meet => (
+                      <div key={meet.id} className="meeting-item" style={{ marginBottom: '1rem' }}>
+                        <div className="meeting-info">
+                          <div className="meeting-icon">
+                            <Video size={24} />
+                          </div>
+                          <div className="meeting-details">
+                            <h4>{meet.title}</h4>
+                            <p>Host: {meet.host} • 3 participants active</p>
+                          </div>
+                        </div>
+                        <div>
+                          <span className="badge badge-green mr-4">Live</span>
+                          <button className="btn btn-primary 3d-button" onClick={() => {
+                            setMeetingTitle(meet.title);
+                            setInActiveMeeting(true);
+                            setCurrentTab('meeting');
+                          }}>
+                            {inActiveMeeting && meetingTitle === meet.title ? 'Return to Room' : 'Join Room'}
+                          </button>
+                        </div>
                       </div>
-                      <div className="meeting-details">
-                        <h4>Enterprise AI Integration Align</h4>
-                        <p>Host: Sarah Jenkins • 3 participants active</p>
-                      </div>
+                    ))
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
+                      No active meetings right now. Start a scheduled meeting or click "Start Instant Meeting" above.
                     </div>
-                    <div>
-                      <span className="badge badge-green mr-4">Live</span>
-                      <button className="btn btn-primary 3d-button" onClick={() => {
-                        setMeetingTitle('Enterprise AI Integration Align');
-                        setShowJoinSetupModal(true);
-                      }}>Join Room</button>
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
 
@@ -941,11 +2049,69 @@ export default function App() {
                 <h3 className="card-title">🤖 AI Meeting Assistant</h3>
                 <div style={{fontSize: '0.875rem', lineHeight: '1.6', color: 'var(--text-secondary)'}}>
                   <p>IntellMeet runs automated speech-to-text summaries to boost efficiency by <b>40-60%</b>.</p>
-                  <div className="action-item-card mt-4">
-                    <div className="action-item-card-title">Latest Extracted Task:</div>
-                    <div>Verify WebRTC loopback servers setup.</div>
-                    <span className="badge badge-blue mt-2">Assigned: Alex Rivera</span>
-                  </div>
+                  {tasks.length > 0 ? (
+                    <div className="action-item-card mt-4">
+                      <div className="action-item-card-title">Latest Extracted Task:</div>
+                      <div>{tasks[tasks.length - 1].title}</div>
+                      <span className="badge badge-blue mt-2">Assigned: {tasks[tasks.length - 1].assignee}</span>
+                    </div>
+                  ) : (
+                    <div className="action-item-card mt-4" style={{ backgroundColor: 'var(--bg-secondary)', borderStyle: 'dashed' }}>
+                      <div className="action-item-card-title" style={{ opacity: 0.6 }}>No actions extracted yet.</div>
+                      <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>Start a meeting room to automatically capture and assign tasks in real-time.</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Session Activity Log Widget */}
+              <div className="dashboard-card col-12 3d-effect">
+                <h3 className="card-title">📋 Session Activity Log</h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '1.25rem' }}>
+                  Track login and logout cycles for team auditing.
+                </p>
+                <div style={{ maxHeight: '250px', overflowY: 'auto', borderRadius: '6px', border: '1px solid var(--color-border)', backgroundColor: 'var(--bg-secondary)' }}>
+                  {sessionLogs.length > 0 ? (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem', textAlign: 'left' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: 'var(--bg-primary)' }}>
+                          <th style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-primary)' }}>User</th>
+                          <th style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-primary)' }}>Action</th>
+                          <th style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-primary)' }}>Timestamp</th>
+                          <th style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-primary)' }}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sessionLogs.map((log) => (
+                          <tr key={log.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                            <td style={{ padding: '0.75rem 1rem', fontWeight: 500, color: 'var(--text-primary)' }}>{log.username}</td>
+                            <td style={{ padding: '0.75rem 1rem' }}>
+                              <span className={`badge ${log.action === 'login' ? 'badge-green' : 'badge-red'}`} style={{ textTransform: 'capitalize' }}>
+                                {log.action === 'login' ? 'Logged In' : 'Logged Out'}
+                              </span>
+                            </td>
+                            <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>{log.timestamp}</td>
+                            <td style={{ padding: '0.75rem 1rem' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)' }}>
+                                <span style={{
+                                  width: '8px',
+                                  height: '8px',
+                                  borderRadius: '50%',
+                                  backgroundColor: log.action === 'login' ? 'var(--color-success)' : '#94a3b8',
+                                  display: 'inline-block'
+                                }}></span>
+                                {log.action === 'login' ? 'Active Session' : 'Disconnected'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-secondary)' }}>
+                      No recent session logs recorded. Try logging in or out.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -960,7 +2126,7 @@ export default function App() {
             <div className="workspace-header" style={{marginBottom: '1rem'}}>
               <div>
                 <h1 className="workspace-title">📹 {meetingTitle}</h1>
-                <p style={{color: 'var(--text-secondary)'}}>ID: MEET-LOOPBACK-2026 • Encryption SECURE</p>
+                <p style={{color: 'var(--text-secondary)'}}>ID: {meetingId}</p>
               </div>
               <button className="btn btn-danger 3d-button" onClick={endMeeting}>Leave & Generate Summary</button>
             </div>
@@ -980,22 +2146,6 @@ export default function App() {
                     <span className="participant-label">
                       <div style={{width: '20px', height: '20px', display: 'inline-block'}}>{AVATAR_LOGOS[selectedAvatarIdx]}</div>
                       {username} (You)
-                    </span>
-                  </div>
-                  
-                  <div className="video-feed active-speaker 3d-effect">
-                    <canvas ref={sarahVideoRef} width="320" height="180"></canvas>
-                    <span className="participant-label">
-                      <div style={{width: '20px', height: '20px', display: 'inline-block'}}>{AVATAR_LOGOS[2]}</div>
-                      Sarah Jenkins
-                    </span>
-                  </div>
-
-                  <div className="video-feed 3d-effect">
-                    <canvas ref={alexVideoRef} width="320" height="180"></canvas>
-                    <span className="participant-label">
-                      <div style={{width: '20px', height: '20px', display: 'inline-block'}}>{AVATAR_LOGOS[1]}</div>
-                      Alex Rivera
                     </span>
                   </div>
                 </div>
@@ -1100,7 +2250,6 @@ export default function App() {
                           </div>
                         </div>
                       ))}
-                      {isTyping && <div style={{fontSize: '0.75rem', color: 'var(--text-muted)'}}>Teammate is typing...</div>}
                       
                       <div className="input-with-send">
                         <input 
@@ -1135,7 +2284,12 @@ export default function App() {
                         </div>
                       ))}
 
+                      {/* Host action panel */}
                       <div className="form-group mt-4" style={{borderTop: '1px solid var(--color-border)', paddingTop: '1rem'}}>
+                        <h4 style={{fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem'}}>
+                          🛡️ Host Action Panel
+                        </h4>
+                        
                         <label className="form-label">Task Title</label>
                         <input 
                           type="text" 
@@ -1145,6 +2299,18 @@ export default function App() {
                           placeholder="e.g. Test loopback API"
                         />
                       </div>
+                      
+                      <div className="form-group">
+                        <label className="form-label">Task Description</label>
+                        <textarea 
+                          className="form-input 3d-effect" 
+                          style={{ minHeight: '60px', padding: '0.5rem', resize: 'vertical' }}
+                          value={actionDescriptionInput} 
+                          onChange={(e) => setActionDescriptionInput(e.target.value)} 
+                          placeholder="Describe the task details..."
+                        />
+                      </div>
+
                       <div className="form-group">
                         <label className="form-label">Assignee</label>
                         <select 
@@ -1152,13 +2318,29 @@ export default function App() {
                           value={actionAssigneeInput}
                           onChange={(e) => setActionAssigneeInput(e.target.value)}
                         >
-                          <option value={username}>You ({username})</option>
+                          <option value="Everyone">Everyone</option>
+                          <option value={username}>{username} (You)</option>
                           <option value="Sarah Jenkins">Sarah Jenkins</option>
                           <option value="Alex Rivera">Alex Rivera</option>
                         </select>
                       </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Task Expiry / Timeline</label>
+                        <select 
+                          className="form-input 3d-effect" 
+                          value={actionTimelineInput}
+                          onChange={(e) => setActionTimelineInput(e.target.value)}
+                        >
+                          <option value="now">Do now (done by now)</option>
+                          <option value="30mins">Expire in 30 minutes</option>
+                          <option value="1hour">Expire in 1 hour</option>
+                          <option value="post">Post-meeting task (do after the meeting)</option>
+                        </select>
+                      </div>
+
                       <button className="btn btn-primary w-full 3d-button" onClick={handleAddActionItem}>
-                        <Plus size={16} /> Add Action Item
+                        <Plus size={16} /> Post Task
                       </button>
                     </div>
                   )}
@@ -1175,13 +2357,13 @@ export default function App() {
           <div>
             <div className="workspace-header">
               <div>
-                <h1 className="workspace-title">📋 Kanban Project Board</h1>
-                <p style={{color: 'var(--text-secondary)'}}>Click cards to cycle status</p>
+                <h1 className="workspace-title">📋 Task Management Hub</h1>
+                <p style={{color: 'var(--text-secondary)'}}>Manage and track your project tasks</p>
               </div>
             </div>
 
             <div className="kanban-grid">
-              {['todo', 'in_progress', 'review', 'done'].map(statusKey => (
+              {['todo', 'in_progress', 'done', 'review'].map(statusKey => (
                 <div key={statusKey} className="kanban-column 3d-effect">
                   <div className="kanban-column-header">
                     <span className="column-title" style={{textTransform: 'uppercase'}}>{statusKey.replace('_', ' ')}</span>
@@ -1189,13 +2371,84 @@ export default function App() {
                   </div>
                   <div className="kanban-cards">
                     {tasks.filter(t => t.status === statusKey).map(t => (
-                      <div key={t.id} className="kanban-card 3d-effect" onClick={() => cycleTaskStatus(t.id)}>
+                      <div key={t.id} className="kanban-card 3d-effect">
                         <h4 className="kanban-card-title">{t.title}</h4>
                         <p className="kanban-card-desc">{t.description}</p>
                         <div className="kanban-card-footer">
                           <span className="assignee"><Users size={12} /> {t.assignee}</span>
                           <span className="priority-tag" style={{color: t.priority === 'high' ? 'var(--color-danger)' : 'var(--color-warning)'}}>{t.priority}</span>
                         </div>
+
+                        {/* Review Notes - Rendered only when in REVIEW column */}
+                        {t.status === 'review' && (
+                          <div style={{ marginTop: '0.75rem', width: '100%', borderTop: '1px solid var(--color-border)', paddingTop: '0.75rem' }} onClick={(e) => e.stopPropagation()}>
+                            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.25rem' }}>
+                              Review Notes / Feedback:
+                            </label>
+                            <textarea
+                              className="form-input 3d-effect"
+                              style={{ 
+                                width: '100%', 
+                                minHeight: '60px', 
+                                fontSize: '0.75rem', 
+                                padding: '0.5rem', 
+                                resize: 'vertical',
+                                backgroundColor: 'var(--bg-secondary)',
+                                border: '1px solid var(--color-border)',
+                                borderRadius: '6px'
+                              }}
+                              placeholder="Type review notes here..."
+                              value={t.reviewNotes || ''}
+                              onChange={(e) => updateReviewNotes(t.id, e.target.value)}
+                            />
+                          </div>
+                        )}
+
+                        {/* Transition Buttons */}
+                        {(t.status === 'todo' || t.status === 'in_progress' || t.status === 'done') && (
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.75rem', borderTop: '1px solid var(--color-border)', paddingTop: '0.75rem' }}>
+                            {t.status === 'todo' && (
+                              <button 
+                                className="btn btn-warning btn-sm 3d-button" 
+                                onClick={(e) => { e.stopPropagation(); handlePendingClick(t); }}
+                              >
+                                Pending
+                              </button>
+                            )}
+                            {t.status === 'in_progress' && (
+                              <>
+                                <button 
+                                  className="btn btn-danger btn-sm 3d-button" 
+                                  onClick={(e) => { e.stopPropagation(); handleBackToTodoClick(t); }}
+                                >
+                                  Back
+                                </button>
+                                <button 
+                                  className="btn btn-primary btn-sm 3d-button" 
+                                  onClick={(e) => { e.stopPropagation(); handleOngoingClick(t); }}
+                                >
+                                  Ongoing
+                                </button>
+                              </>
+                            )}
+                            {t.status === 'done' && (
+                              <>
+                                <button 
+                                  className="btn btn-secondary btn-sm 3d-button" 
+                                  onClick={(e) => { e.stopPropagation(); handleBackToProgressClick(t); }}
+                                >
+                                  Back
+                                </button>
+                                <button 
+                                  className="btn btn-success btn-sm 3d-button" 
+                                  onClick={(e) => { e.stopPropagation(); handleCompletedClick(t); }}
+                                >
+                                  Completed
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1364,59 +2617,149 @@ export default function App() {
           JOIN MEETING SETUP SETUP MODAL (Logo selection)
           ========================================== */}
       {showJoinSetupModal && (
-        <div className="modal-overlay">
-          <div className="modal-content 3d-effect" style={{maxWidth: '600px'}}>
-            <div className="modal-header">
-              <h3>Configure Meeting Presence</h3>
+        <div className="modal-overlay" style={{ zIndex: 999 }}>
+          <div className="modal-content 3d-effect" style={{ maxWidth: '780px', width: '95%', padding: '2rem' }}>
+            <div className="modal-header" style={{ marginBottom: '1.25rem' }}>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Ready to Join?</h3>
             </div>
-            <div className="modal-body">
-              <div className="form-group">
-                <label className="form-label">Your Display Name</label>
-                <input 
-                  type="text" 
-                  className="form-input 3d-effect" 
-                  value={username} 
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Enter your name"
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label" style={{marginBottom: '1rem'}}>Choose Presence Avatar / Logo (Reference from PDF)</label>
+            
+            <div className="modal-body pre-join-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
+              
+              {/* Left Column: Live Camera Video Stream Preview */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-secondary)', borderRadius: '12px', padding: '1rem', border: '1px solid var(--color-border)' }}>
                 <div style={{
-                  display: 'grid', 
-                  gridTemplateColumns: 'repeat(5, 1fr)', 
-                  gap: '1rem', 
-                  padding: '1rem', 
-                  backgroundColor: 'var(--bg-secondary)', 
-                  borderRadius: '12px',
-                  border: '1px solid var(--color-border)'
+                  width: '100%',
+                  aspectRatio: '16/9',
+                  backgroundColor: '#0f172a',
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                  position: 'relative',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: 'inset 0 0 10px rgba(0,0,0,0.5)'
                 }}>
-                  {AVATAR_LOGOS.map((svg, idx) => (
-                    <div 
-                      key={idx} 
-                      onClick={() => setSelectedAvatarIdx(idx)}
-                      style={{
-                        cursor: 'pointer',
-                        borderRadius: '50%',
-                        border: selectedAvatarIdx === idx ? '3px solid var(--color-primary)' : '2px solid transparent',
-                        padding: '3px',
-                        backgroundColor: selectedAvatarIdx === idx ? 'white' : 'transparent',
-                        transform: selectedAvatarIdx === idx ? 'scale(1.1) translateY(-2px)' : 'none',
-                        transition: 'all 0.2s ease',
-                        boxShadow: selectedAvatarIdx === idx ? '0 4px 10px rgba(2, 132, 199, 0.3)' : 'none'
-                      }}
-                      title={idx < 2 ? "Boy Avatar" : idx < 4 ? "Girl Avatar" : "Meeting Symbol"}
-                    >
-                      {svg}
+                  {isCamOff ? (
+                    <div className="user-avatar" style={{ width: '70px', height: '70px', background: 'transparent' }}>
+                      {AVATAR_LOGOS[selectedAvatarIdx]}
                     </div>
-                  ))}
+                  ) : (
+                    <video ref={previewVideoRef} style={{ width: '100%', height: '100%', objectFit: 'cover' }} playsInline muted />
+                  )}
+                  
+                  {/* Status indicator pill */}
+                  <div style={{
+                    position: 'absolute',
+                    top: '8px',
+                    left: '8px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+                    color: '#ffffff',
+                    padding: '0.2rem 0.5rem',
+                    borderRadius: '4px',
+                    fontSize: '0.7rem',
+                    fontWeight: 500,
+                    backdropFilter: 'blur(4px)'
+                  }}>
+                    {isCamOff ? '📷 Camera Off' : '📷 Camera Live'}
+                  </div>
+                </div>
+
+                {/* Pre-join audio/video controls panel */}
+                <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
+                  <button 
+                    className={`control-btn ${isMuted ? 'danger' : 'active'}`}
+                    style={{ width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                    onClick={() => setIsMuted(!isMuted)}
+                    title={isMuted ? 'Unmute microphone' : 'Mute microphone'}
+                  >
+                    {isMuted ? <MicOff size={16} /> : <Mic size={16} />}
+                  </button>
+
+                  <button 
+                    className={`control-btn ${isCamOff ? 'danger' : 'active'}`}
+                    style={{ width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                    onClick={() => setIsCamOff(!isCamOff)}
+                    title={isCamOff ? 'Turn camera on' : 'Turn camera off'}
+                  >
+                    {isCamOff ? <VideoOff size={16} /> : <Video size={16} />}
+                  </button>
+
+                  <button 
+                    className="control-btn active"
+                    style={{ width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                    onClick={playSoundTest}
+                    title="Test speaker sound"
+                  >
+                    <Volume2 size={16} />
+                  </button>
                 </div>
               </div>
+
+              {/* Right Column: Setup Topic, Name, and Fallback Avatar selection */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', justifyContent: 'center' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Topic of the meeting</label>
+                  <input 
+                    type="text" 
+                    className="form-input 3d-effect" 
+                    value={meetingTitle} 
+                    onChange={(e) => setMeetingTitle(e.target.value)}
+                    placeholder="Enter meeting topic (e.g. Project Alignment)"
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Your Display Name</label>
+                  <input 
+                    type="text" 
+                    className="form-input 3d-effect" 
+                    value={username} 
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="Enter your name"
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ marginBottom: '0.5rem' }}>Choose fallback avatar</label>
+                  <div style={{
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(5, 1fr)', 
+                    gap: '0.5rem', 
+                    padding: '0.5rem', 
+                    backgroundColor: 'var(--bg-secondary)', 
+                    borderRadius: '8px',
+                    border: '1px solid var(--color-border)'
+                  }}>
+                    {AVATAR_LOGOS.slice(0, 5).map((svg, idx) => (
+                      <div 
+                        key={idx} 
+                        onClick={() => setSelectedAvatarIdx(idx)}
+                        style={{
+                          cursor: 'pointer',
+                          borderRadius: '50%',
+                          border: selectedAvatarIdx === idx ? '2px solid var(--color-primary)' : '2px solid transparent',
+                          padding: '2px',
+                          backgroundColor: selectedAvatarIdx === idx ? 'white' : 'transparent',
+                          transform: selectedAvatarIdx === idx ? 'scale(1.08)' : 'none',
+                          transition: 'all 0.2s ease',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}
+                        title={idx < 2 ? "Boy Avatar" : idx < 4 ? "Girl Avatar" : "Meeting Symbol"}
+                      >
+                        <div style={{ width: '28px', height: '28px' }}>{svg}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
             </div>
-            <div className="modal-footer">
+            
+            <div className="modal-footer" style={{ borderTop: '1px solid var(--color-border)', paddingTop: '1rem' }}>
               <button className="btn btn-secondary 3d-button" onClick={() => setShowJoinSetupModal(false)}>Cancel</button>
-              <button className="btn btn-primary 3d-button" onClick={() => startMeeting(meetingTitle)}>Join/Start Meeting</button>
+              <button className="btn btn-primary 3d-button" onClick={() => startMeeting(meetingTitle)}>Join Meeting</button>
             </div>
           </div>
         </div>
@@ -1438,11 +2781,36 @@ export default function App() {
                 style={{width: '100%', display: 'block'}}
               />
             </div>
-            <div className="modal-footer">
-              <a href={playbackUrl} download={`${playbackTitle.replace(/\s+/g, '_')}.webm`} className="btn btn-primary 3d-button">
-                <Download size={14} /> Download File
-              </a>
-              <button className="btn btn-secondary 3d-button" onClick={() => setPlaybackUrl(null)}>Close</button>
+            <div className="modal-footer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Download Quality:</span>
+                <select 
+                  value={downloadQuality} 
+                  onChange={(e) => setDownloadQuality(e.target.value)}
+                  style={{
+                    backgroundColor: 'var(--bg-secondary)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '4px',
+                    padding: '4px 8px',
+                    fontSize: '0.875rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <option value="720p">720p (HD)</option>
+                  <option value="1080p">1080p (Full HD)</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <a 
+                  href={playbackUrl} 
+                  download={`${playbackTitle.replace(/\s+/g, '_')}_${downloadQuality}.webm`} 
+                  className="btn btn-primary 3d-button"
+                >
+                  <Download size={14} /> Download File
+                </a>
+                <button className="btn btn-secondary 3d-button" onClick={() => setPlaybackUrl(null)}>Close</button>
+              </div>
             </div>
           </div>
         </div>
@@ -1458,20 +2826,84 @@ export default function App() {
             <div className="modal-body">
               <div className="form-group">
                 <label className="form-label">Meeting Title</label>
-                <input type="text" className="form-input 3d-effect" placeholder="e.g. Sprint Planning Sync" />
+                <input 
+                  type="text" 
+                  className="form-input 3d-effect" 
+                  placeholder="e.g. Sprint Planning Sync" 
+                  value={schedTitle}
+                  onChange={(e) => setSchedTitle(e.target.value)}
+                />
               </div>
               <div className="form-group">
                 <label className="form-label">Date & Time</label>
-                <input type="datetime-local" className="form-input 3d-effect" />
+                <input 
+                  type="datetime-local" 
+                  className="form-input 3d-effect" 
+                  value={schedDateTime}
+                  onChange={(e) => setSchedDateTime(e.target.value)}
+                />
               </div>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-secondary 3d-button" onClick={() => setShowScheduleModal(false)}>Cancel</button>
-              <button className="btn btn-primary 3d-button" onClick={() => setShowScheduleModal(false)}>Schedule Sync</button>
+              <button 
+                className="btn btn-secondary 3d-button" 
+                onClick={() => {
+                  setSchedTitle('');
+                  setSchedDateTime('');
+                  setShowScheduleModal(false);
+                }}
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-primary 3d-button" 
+                onClick={() => {
+                  handleScheduleMeeting(schedTitle, schedDateTime);
+                  setSchedTitle('');
+                  setSchedDateTime('');
+                  setShowScheduleModal(false);
+                }}
+                disabled={!schedTitle.trim() || !schedDateTime.trim()}
+              >
+                Schedule Sync
+              </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Confirmation Modal */}
+      {confirmModal.show && (
+        <div className="modal-overlay" style={{ zIndex: 10000 }}>
+          <div className="modal-content 3d-effect" style={{ maxWidth: '400px' }}>
+            <div className="modal-header">
+              <h3>{confirmModal.title || 'Confirm Action'}</h3>
+            </div>
+            <div className="modal-body">
+              <p style={{ fontSize: '0.95rem', color: 'var(--text-primary)', margin: '0.5rem 0', lineHeight: 1.5 }}>
+                {confirmModal.message}
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button 
+                className="btn btn-secondary 3d-button" 
+                onClick={() => setConfirmModal(prev => ({ ...prev, show: false }))}
+              >
+                No
+              </button>
+              <button 
+                className="btn btn-primary 3d-button" 
+                onClick={confirmModal.onConfirm}
+              >
+                Yes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hidden Video element for webcam streaming */}
+      <video ref={hiddenVideoRef} style={{ display: 'none' }} playsInline muted />
 
     </div>
   );

@@ -142,7 +142,7 @@
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  background-color: #ffffff; /* White */
+  background-color: var(--bg-primary);
   padding: 2rem;
   position: relative;
 }
@@ -178,6 +178,13 @@
   border: none;
 }
 
+.btn-sm {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  border-radius: 6px;
+  gap: 0.25rem;
+}
+
 .btn-primary {
   background-color: var(--color-primary); /* Blue */
   color: white;
@@ -206,6 +213,25 @@
   opacity: 0.9;
 }
 
+.btn-warning {
+  background-color: var(--color-warning);
+  color: white;
+}
+
+.btn-warning:hover {
+  opacity: 0.9;
+}
+
+.btn-success {
+  background-color: var(--color-success);
+  color: white;
+}
+
+.btn-success:hover {
+  opacity: 0.9;
+}
+
+
 /* 3D Effects System */
 .3d-effect {
   box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.06), 
@@ -213,7 +239,7 @@
               inset 0 1px 0 rgba(255, 255, 255, 0.8);
   border: 1px solid rgba(226, 232, 240, 0.8);
   border-radius: 12px;
-  background-color: white;
+  background-color: var(--bg-primary);
   transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), 
               box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -252,7 +278,7 @@
 .auth-card {
   width: 100%;
   max-width: 420px;
-  background-color: white;
+  background-color: var(--bg-primary);
   padding: 2.5rem;
   border-radius: 16px;
   box-shadow: var(--shadow-lg);
@@ -340,7 +366,7 @@
 }
 
 .dashboard-card {
-  background-color: white;
+  background-color: var(--bg-primary);
   border: 1px solid var(--color-border);
   border-radius: 12px;
   padding: 1.5rem;
@@ -400,7 +426,7 @@
 
 .meeting-item:hover {
   border-color: var(--color-primary);
-  background-color: white;
+  background-color: var(--bg-primary);
   box-shadow: var(--shadow-sm);
 }
 
@@ -791,7 +817,7 @@
 }
 
 .modal-content {
-  background-color: white;
+  background-color: var(--bg-primary);
   border-radius: 16px;
   padding: 2.5rem;
   width: 100%;
@@ -845,3 +871,156 @@
 .avatar-svg:hover {
   transform: scale(1.1);
 }
+
+/* Supabase Configuration & OTP UI Styles */
+.supabase-config-toggle {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.supabase-config-toggle:hover {
+  background-color: var(--bg-tertiary);
+  color: var(--color-primary);
+  transform: rotate(45deg);
+}
+
+.connection-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-weight: 500;
+  margin-bottom: 1rem;
+  align-self: center;
+}
+
+.connection-indicator.local {
+  background-color: #fef3c7;
+  color: #d97706;
+}
+
+.connection-indicator.supabase {
+  background-color: #d1fae5;
+  color: #059669;
+}
+
+.indicator-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.connection-indicator.local .indicator-dot {
+  background-color: #d97706;
+}
+
+.connection-indicator.supabase .indicator-dot {
+  background-color: #059669;
+}
+
+.otp-digit-inputs {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  margin: 1.5rem 0;
+}
+
+.otp-timer {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  text-align: center;
+  letter-spacing: 0.05em;
+  margin: 0.5rem 0 1.5rem 0;
+  background-color: var(--bg-secondary);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  display: inline-block;
+  align-self: center;
+}
+
+.otp-timer.expired {
+  color: var(--color-danger);
+}
+
+.resend-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-primary);
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.resend-btn:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+/* Layout Utilities (Flexbox, margins, gaps, widths) */
+.flex {
+  display: flex;
+}
+.flex-col {
+  display: flex;
+  flex-direction: column;
+}
+.align-center {
+  align-items: center;
+}
+.justify-between {
+  justify-content: space-between;
+}
+.gap-1 {
+  gap: 0.25rem;
+}
+.gap-2 {
+  gap: 0.5rem;
+}
+.gap-3 {
+  gap: 0.75rem;
+}
+.gap-4 {
+  gap: 1rem;
+}
+.gap-6 {
+  gap: 1.5rem;
+}
+.mb-2 {
+  margin-bottom: 0.5rem;
+}
+.mb-4 {
+  margin-bottom: 1rem;
+}
+.mb-6 {
+  margin-bottom: 1.5rem;
+}
+.mt-2 {
+  margin-top: 0.5rem;
+}
+.mt-4 {
+  margin-top: 1rem;
+}
+.mr-4 {
+  margin-right: 1rem;
+}
+.w-full {
+  width: 100%;
+}
+
+
