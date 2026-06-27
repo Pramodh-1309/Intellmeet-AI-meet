@@ -67,6 +67,13 @@ interface ScheduledMeeting {
   dateTime: string;
   host: string;
   isHostJoined: boolean;
+  meetingType: 'public' | 'private';
+  recurrence: 'none' | 'daily' | 'weekly';
+  password?: string;
+  invitedEmails?: string[];
+  responses?: { [email: string]: 'accepted' | 'declined' | 'pending' };
+  duration?: number;
+  isExpired?: boolean;
 }
 
 // Avatar Logo SVGs representation mapping
@@ -212,6 +219,83 @@ export default function App() {
   const [currentTime, setCurrentTime] = useState<number>(Date.now());
   const [schedTitle, setSchedTitle] = useState<string>('');
   const [schedDateTime, setSchedDateTime] = useState<string>('');
+
+  // Extended Scheduling States
+  const [schedMeetingType, setSchedMeetingType] = useState<'public' | 'private'>('public');
+  const [schedRecurrence, setSchedRecurrence] = useState<'none' | 'daily' | 'weekly'>('none');
+  const [schedInvitedEmails, setSchedInvitedEmails] = useState<string>('');
+  const [schedDuration, setSchedDuration] = useState<number>(30);
+  const [showPasscodeAlert, setShowPasscodeAlert] = useState<boolean>(false);
+  const [lastScheduledMeet, setLastScheduledMeet] = useState<ScheduledMeeting | null>(null);
+
+  // Guest Mode & Authentication Drawer States
+  const [joinMeetIdInput, setJoinMeetIdInput] = useState<string>('');
+  const [joinMeetPassInput, setJoinMeetPassInput] = useState<string>('');
+  const [guestDisplayName, setGuestDisplayName] = useState<string>('');
+  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
+  const [showAccountMenu, setShowAccountMenu] = useState<boolean>(false);
+
+  // User Profile Settings & webcam states
+  const [userPhone, setUserPhone] = useState<string>('');
+  const [userDob, setUserDob] = useState<string>('');
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState<string>('');
+  const [isWebcamActive, setIsWebcamActive] = useState<boolean>(false);
+  const [cameraError, setCameraError] = useState<string>('');
+  
+  // Password Management States
+  const [currentPasswordInput, setCurrentPasswordInput] = useState<string>('');
+  const [newPasswordInput, setNewPasswordInput] = useState<string>('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState<string>('');
+  const [passwordChangeStatus, setPasswordChangeStatus] = useState<string>('');
+  const [passwordChangeError, setPasswordChangeError] = useState<string>('');
+
+  // Meeting System preferences (Zoom/Meet Style)
+  const [prefAutoMute, setPrefAutoMute] = useState<boolean>(() => localStorage.getItem('pref_auto_mute') === 'true');
+  const [prefAutoCameraOff, setPrefAutoCameraOff] = useState<boolean>(() => localStorage.getItem('pref_auto_camera_off') === 'true');
+  const [prefMirrorVideo, setPrefMirrorVideo] = useState<boolean>(() => localStorage.getItem('pref_mirror_video') !== 'false');
+  const [prefShowNames, setPrefShowNames] = useState<boolean>(() => localStorage.getItem('pref_show_names') !== 'false');
+  const [prefNoiseSuppress, setPrefNoiseSuppress] = useState<boolean>(() => localStorage.getItem('pref_noise_suppress') === 'true');
+
+  const webcamVideoRef = useRef<HTMLVideoElement | null>(null);
+  const webcamStreamRef = useRef<MediaStream | null>(null);
+
+  interface EmailLog {
+    id: string;
+    to: string;
+    subject: string;
+    body: string;
+    timestamp: string;
+  }
+  const [emailLogs, setEmailLogs] = useState<EmailLog[]>(() => {
+    const saved = localStorage.getItem('intellmeet_emaillogs');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // Filtered logs for the specific authenticated user
+  const userEmailLogs = emailLogs.filter(log => {
+    const userEmail = email.trim().toLowerCase();
+    const userNm = username.trim().toLowerCase();
+    if (!userEmail) return false;
+    return log.to.toLowerCase() === userEmail || 
+           log.body.toLowerCase().includes(userEmail) || 
+           log.body.toLowerCase().includes(userNm);
+  });
+
+  const sendEmailNotification = (to: string, subject: string, body: string) => {
+    const newLog: EmailLog = {
+      id: 'MAIL-' + Math.random().toString(36).substr(2, 4).toUpperCase(),
+      to,
+      subject,
+      body,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    };
+    setEmailLogs(prev => {
+      const updated = [newLog, ...prev];
+      localStorage.setItem('intellmeet_emaillogs', JSON.stringify(updated));
+      return updated;
+    });
+    console.log(`[EMAIL SENT] To: ${to} | Subject: ${subject}`);
+  };
 
   // Confirmation Modal state
   const [confirmModal, setConfirmModal] = useState<{
@@ -525,6 +609,262 @@ export default function App() {
     };
   }, [inActiveMeeting, isMuted, username]);
 
+  // User profile image renderer helper
+  const renderUserAvatar = (sizeStyle: any = { width: '100%', height: '100%' }) => {
+    if (profilePhotoUrl) {
+      return <img src={profilePhotoUrl} alt="User Avatar" style={{ ...sizeStyle, borderRadius: '50%', objectFit: 'cover' }} />;
+    }
+    return AVATAR_LOGOS[selectedAvatarIdx];
+  };
+
+  // Local file upload parser to base64
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === 'string') {
+          setProfilePhotoUrl(reader.result);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Start webcam feed for settings profile capture
+  const startWebcam = async () => {
+    setCameraError('');
+    setIsWebcamActive(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      webcamStreamRef.current = stream;
+      if (webcamVideoRef.current) {
+        webcamVideoRef.current.srcObject = stream;
+        webcamVideoRef.current.play();
+      }
+    } catch (err: any) {
+      console.error(err);
+      setCameraError('Could not access webcam: ' + err.message);
+      setIsWebcamActive(false);
+    }
+  };
+
+  // Stop webcam feed
+  const stopWebcam = () => {
+    if (webcamStreamRef.current) {
+      webcamStreamRef.current.getTracks().forEach(track => track.stop());
+      webcamStreamRef.current = null;
+    }
+    setIsWebcamActive(false);
+  };
+
+  // Capture canvas snapshot from webcam feed
+  const captureWebcamSnapshot = () => {
+    if (webcamVideoRef.current) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 150;
+      canvas.height = 150;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const video = webcamVideoRef.current;
+        const size = Math.min(video.videoWidth, video.videoHeight);
+        const sx = (video.videoWidth - size) / 2;
+        const sy = (video.videoHeight - size) / 2;
+        ctx.drawImage(video, sx, sy, size, size, 0, 0, 150, 150);
+        const dataUrl = canvas.toDataURL('image/jpeg');
+        setProfilePhotoUrl(dataUrl);
+      }
+      stopWebcam();
+    }
+  };
+
+  // Password validation helper
+  const validatePassword = (pass: string) => {
+    return {
+      length: pass.length >= 8,
+      uppercase: /[A-Z]/.test(pass),
+      lowercase: /[a-z]/.test(pass),
+      number: /[0-9]/.test(pass),
+      special: /[^A-Za-z0-9]/.test(pass)
+    };
+  };
+  const pwValidations = validatePassword(newPasswordInput);
+
+  // Change password submit handler
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordChangeError('');
+    setPasswordChangeStatus('');
+
+    const validations = validatePassword(newPasswordInput);
+    const isStrong = validations.length && validations.uppercase && validations.lowercase && validations.number && validations.special;
+
+    if (!isStrong) {
+      setPasswordChangeError('Password does not meet strength requirements.');
+      return;
+    }
+
+    if (newPasswordInput !== confirmPasswordInput) {
+      setPasswordChangeError('Passwords do not match.');
+      return;
+    }
+
+    if (isSupabaseConfigured() && supabase) {
+      const { error } = await supabase.auth.updateUser({ password: newPasswordInput });
+      if (error) {
+        setPasswordChangeError(error.message);
+      } else {
+        setPasswordChangeStatus('Password updated successfully in Supabase!');
+        setCurrentPasswordInput('');
+        setNewPasswordInput('');
+        setConfirmPasswordInput('');
+      }
+    } else {
+      const usersRaw = localStorage.getItem('intellmeet_local_users') || '[]';
+      const localUsers = JSON.parse(usersRaw);
+      const matchedIdx = localUsers.findIndex((u: any) => u.email === email);
+      
+      if (matchedIdx !== -1) {
+        if (localUsers[matchedIdx].password !== currentPasswordInput) {
+          setPasswordChangeError('Current password is incorrect.');
+          return;
+        }
+        localUsers[matchedIdx].password = newPasswordInput;
+        localStorage.setItem('intellmeet_local_users', JSON.stringify(localUsers));
+        setPasswordChangeStatus('Password updated successfully in local sandbox!');
+        setCurrentPasswordInput('');
+        setNewPasswordInput('');
+        setConfirmPasswordInput('');
+      } else {
+        setPasswordChangeError('User account not found.');
+      }
+    }
+  };
+
+  // Join meeting from Dashboard Card
+  const handleJoinMeetingFromCard = () => {
+    let inputVal = joinMeetIdInput.trim();
+    if (!inputVal) {
+      alert("Please enter a valid Meeting ID or Join Link.");
+      return;
+    }
+    
+    // Auto extract meeting ID if a full URL is pasted
+    let targetId = inputVal;
+    if (inputVal.includes('/join/')) {
+      const parts = inputVal.split('/join/');
+      targetId = parts[parts.length - 1].trim();
+    }
+
+    const match = scheduledMeetings.find(m => m.id === targetId);
+    
+    if (match) {
+      if (match.password && match.password !== joinMeetPassInput.trim()) {
+        alert("Invalid meeting passcode. Please try again.");
+        return;
+      }
+      if (isMeetingExpired(match)) {
+        alert("This meeting has expired.");
+        return;
+      }
+    }
+
+    if (guestDisplayName.trim()) {
+      setUsername(guestDisplayName.trim());
+    } else if (!username) {
+      setUsername("Guest User");
+    }
+
+    setMeetingTitle(match ? match.title : 'General Sync Room');
+    setMeetingId(targetId);
+    setInActiveMeeting(true);
+    setCurrentTab('meeting');
+    
+    if (match) {
+      if (isSupabaseConfigured() && supabase) {
+        supabase
+          .from('scheduled_meetings')
+          .update({ is_host_joined: true })
+          .eq('id', targetId)
+          .then(({ error }) => {
+            if (error) console.error(error);
+            else setScheduledMeetings(prev => prev.map(m => m.id === targetId ? { ...m, isHostJoined: true } : m));
+          });
+      } else {
+        setScheduledMeetings(prev => {
+          const updated = prev.map(m => m.id === targetId ? { ...m, isHostJoined: true } : m);
+          localStorage.setItem('intellmeet_scheduled_v2', JSON.stringify(updated));
+          return updated;
+        });
+      }
+    }
+  };
+
+  // Premium feature locked view generator
+  const renderLockedFeaturePlaceholder = (featureName: string, description: string) => {
+    return (
+      <div className="dashboard-card col-12 3d-effect text-center" style={{
+        padding: '4rem 2rem',
+        maxWidth: '600px',
+        margin: '4rem auto',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '1.5rem',
+        backgroundColor: 'var(--bg-primary)',
+        border: '2px solid var(--color-border)',
+        borderRadius: '16px',
+        boxShadow: 'var(--shadow-lg)'
+      }}>
+        <div style={{
+          width: '80px',
+          height: '80px',
+          borderRadius: '50%',
+          backgroundColor: '#fee2e2',
+          color: '#ef4444',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: '0.5rem',
+          boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)'
+        }}>
+          <svg viewBox="0 0 24 24" width="36" height="36" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+        </div>
+        <div>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
+            🔒 Premium Feature: {featureName}
+          </h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.6', maxWidth: '480px', margin: '0 auto' }}>
+            {description}
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+          <button 
+            className="btn btn-secondary 3d-button" 
+            onClick={() => {
+              setIsRegisterMode(false);
+              setShowAuthModal(true);
+            }}
+          >
+            Log In
+          </button>
+          <button 
+            className="btn btn-primary 3d-button" 
+            onClick={() => {
+              setIsRegisterMode(true);
+              setShowAuthModal(true);
+            }}
+          >
+            Sign Up
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   // Check active Supabase session or fallback local storage session on mount
   useEffect(() => {
     const checkSession = async () => {
@@ -608,7 +948,14 @@ export default function App() {
             title: s.title,
             dateTime: s.date_time,
             host: s.host,
-            isHostJoined: s.is_host_joined
+            isHostJoined: s.is_host_joined || false,
+            meetingType: s.meeting_type || 'public',
+            recurrence: s.recurrence || 'none',
+            password: s.password || '',
+            invitedEmails: s.invited_emails || [],
+            responses: s.responses || {},
+            duration: s.duration || 30,
+            isExpired: s.is_expired || false
           })));
         } else {
           console.error('Error loading scheduled meetings from Supabase:', schedErr);
@@ -622,7 +969,25 @@ export default function App() {
         setHistoryList(savedHistory ? JSON.parse(savedHistory) : []);
 
         const savedScheduled = localStorage.getItem('intellmeet_scheduled_v2');
-        setScheduledMeetings(savedScheduled ? JSON.parse(savedScheduled) : []);
+        if (savedScheduled) {
+          const parsed = JSON.parse(savedScheduled);
+          setScheduledMeetings(parsed.map((s: any) => ({
+            id: s.id,
+            title: s.title,
+            dateTime: s.dateTime || s.date_time,
+            host: s.host,
+            isHostJoined: s.isHostJoined || s.is_host_joined || false,
+            meetingType: s.meetingType || 'public',
+            recurrence: s.recurrence || 'none',
+            password: s.password || '',
+            invitedEmails: s.invitedEmails || s.invited_emails || [],
+            responses: s.responses || {},
+            duration: s.duration || 30,
+            isExpired: s.isExpired || s.is_expired || false
+          })));
+        } else {
+          setScheduledMeetings([]);
+        }
       }
 
       // Load recordings (always local)
@@ -871,6 +1236,11 @@ export default function App() {
     setCustomPosition('');
     setTasks([]);
     setHistoryList([]);
+    setUserPhone('');
+    setUserDob('');
+    setProfilePhotoUrl('');
+    setSelectedAvatarIdx(0);
+    setGuestDisplayName('');
   };
 
   // Add a task in Kanban
@@ -1472,58 +1842,196 @@ export default function App() {
     return diff <= fiveMinutesInMs;
   };
 
+  const isMeetingExpired = (meet: ScheduledMeeting) => {
+    if (meet.meetingType === 'public' && meet.duration) {
+      const startTime = new Date(meet.dateTime).getTime();
+      const endTime = startTime + meet.duration * 60 * 1000;
+      return Date.now() > endTime;
+    }
+    return false;
+  };
+
   const handleScheduleMeeting = async (title: string, dateTimeStr: string) => {
     if (!title.trim() || !dateTimeStr.trim()) return;
 
-    const newMeetingObj = {
+    // 1. Generate Link, ID, Password
+    const generatedId = 'MEET-' + Math.random().toString(36).substr(2, 5).toUpperCase();
+    const generatedPassword = 'PASS-' + Math.floor(1000 + Math.random() * 9000);
+    const generatedLink = `http://localhost:3000/join/${generatedId}`;
+
+    // Parse invited emails
+    const emailsList = schedInvitedEmails
+      .split(',')
+      .map(e => e.trim().toLowerCase())
+      .filter(e => e.length > 0);
+
+    const initialResponses: { [email: string]: 'accepted' | 'declined' | 'pending' } = {};
+    emailsList.forEach(e => {
+      initialResponses[e] = 'pending';
+    });
+
+    const newMeetingObj: ScheduledMeeting = {
+      id: generatedId,
       title: title.trim(),
-      date_time: new Date(dateTimeStr).toISOString(),
+      dateTime: new Date(dateTimeStr).toISOString(),
       host: username || 'User',
-      is_host_joined: false
+      isHostJoined: false,
+      meetingType: schedMeetingType,
+      recurrence: schedMeetingType === 'private' ? schedRecurrence : 'none',
+      password: generatedPassword,
+      invitedEmails: schedMeetingType === 'private' ? emailsList : [],
+      responses: schedMeetingType === 'private' ? initialResponses : {},
+      duration: schedMeetingType === 'public' ? schedDuration : 60, // default 60m for private
+      isExpired: false
     };
 
+    setLastScheduledMeet(newMeetingObj);
+    setShowPasscodeAlert(true);
+
+    // Save
+    let savedToSupabase = false;
     if (isSupabaseConfigured() && supabase) {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data, error } = await supabase
-          .from('scheduled_meetings')
-          .insert([{
-            title: newMeetingObj.title,
-            date_time: newMeetingObj.date_time,
-            host: newMeetingObj.host,
-            is_host_joined: newMeetingObj.is_host_joined,
-            user_id: user.id
-          }])
-          .select();
-        
-        if (error) {
-          console.error('Error scheduling meeting in Supabase:', error);
-        } else if (data && data[0]) {
-          const s = data[0];
-          setScheduledMeetings(prev => [...prev, {
-            id: s.id,
-            title: s.title,
-            dateTime: s.date_time,
-            host: s.host,
-            isHostJoined: s.is_host_joined
-          }]);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data, error } = await supabase
+            .from('scheduled_meetings')
+            .insert([{
+              id: newMeetingObj.id,
+              title: newMeetingObj.title,
+              date_time: newMeetingObj.dateTime,
+              host: newMeetingObj.host,
+              is_host_joined: newMeetingObj.isHostJoined,
+              meeting_type: newMeetingObj.meetingType,
+              recurrence: newMeetingObj.recurrence,
+              password: newMeetingObj.password,
+              invited_emails: newMeetingObj.invitedEmails,
+              responses: newMeetingObj.responses,
+              duration: newMeetingObj.duration,
+              is_expired: newMeetingObj.isExpired,
+              user_id: user.id
+            }])
+            .select();
+
+          if (!error && data && data[0]) {
+            setScheduledMeetings(prev => [...prev, newMeetingObj]);
+            savedToSupabase = true;
+          }
         }
+      } catch (err) {
+        console.warn('Supabase insert failed. Falling back to local storage.', err);
       }
-    } else {
-      // Local Mode
-      const newSched: ScheduledMeeting = {
-        id: 'SCHED-' + Math.random().toString(36).substr(2, 4).toUpperCase(),
-        title: newMeetingObj.title,
-        dateTime: newMeetingObj.date_time,
-        host: newMeetingObj.host,
-        isHostJoined: newMeetingObj.is_host_joined
-      };
+    }
+
+    if (!savedToSupabase) {
       setScheduledMeetings(prev => {
-        const updated = [...prev, newSched];
+        const updated = [...prev, newMeetingObj];
         localStorage.setItem('intellmeet_scheduled_v2', JSON.stringify(updated));
         return updated;
       });
     }
+
+    // Outgoing Email Notification trigger (simulated logging)
+    if (newMeetingObj.meetingType === 'public') {
+      sendEmailNotification(
+        email || 'admin@zidio.com',
+        `Scheduled Public Meeting Confirmed: ${newMeetingObj.title}`,
+        `Hello ${newMeetingObj.host},\n\nYour public meeting is scheduled for ${new Date(newMeetingObj.dateTime).toLocaleString()}.\nLink: ${generatedLink}\nMeeting ID: ${generatedId}\nPassword: ${generatedPassword}\n\nNote: This link will expire after the meeting's ${newMeetingObj.duration} minutes time frame.`
+      );
+    } else {
+      // For private, email everyone invited
+      emailsList.forEach(invitedEmail => {
+        sendEmailNotification(
+          invitedEmail,
+          `Meeting Invitation: ${newMeetingObj.title}`,
+          `You are invited to join a private meeting scheduled by ${newMeetingObj.host} on ${new Date(newMeetingObj.dateTime).toLocaleString()}.\n\nMeeting Type: Private (${newMeetingObj.recurrence} recurrence)\nLink: ${generatedLink}\nMeeting ID: ${generatedId}\nPassword: ${generatedPassword}\n\nPlease log in to your dashboard to Accept or Decline the invitation.`
+        );
+      });
+    }
+
+    // Reset inputs
+    setSchedInvitedEmails('');
+    setSchedMeetingType('public');
+    setSchedRecurrence('none');
+  };
+
+  const handleAcceptInvitation = async (meetId: string) => {
+    const userEmail = email.trim().toLowerCase() || 'admin@zidio.com';
+    
+    // Find the meeting
+    const meetIndex = scheduledMeetings.findIndex(m => m.id === meetId);
+    if (meetIndex === -1) return;
+
+    const meet = scheduledMeetings[meetIndex];
+    const updatedResponses = { ...meet.responses, [userEmail]: 'accepted' as const };
+    const updatedMeet = { ...meet, responses: updatedResponses };
+
+    setScheduledMeetings(prev => {
+      const updated = prev.map(m => m.id === meetId ? updatedMeet : m);
+      localStorage.setItem('intellmeet_scheduled_v2', JSON.stringify(updated));
+      return updated;
+    });
+
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        await supabase
+          .from('scheduled_meetings')
+          .update({ responses: updatedResponses })
+          .eq('id', meetId);
+      } catch (err) {
+        console.warn("Supabase update responses error", err);
+      }
+    }
+
+    // Auto-create card in Task Management Hub (Kanban board)
+    await handleAddTask(
+      `Attend: ${meet.title}`,
+      `Private meeting by ${meet.host} scheduled for ${new Date(meet.dateTime).toLocaleString()}`,
+      username || 'You',
+      'medium'
+    );
+
+    // Send confirmation email back to host
+    sendEmailNotification(
+      'host@zidio.com',
+      `Invitation Accepted: ${meet.title}`,
+      `Hello,\n\n${username} (${userEmail}) has accepted your invitation to attend "${meet.title}" scheduled for ${new Date(meet.dateTime).toLocaleString()}.`
+    );
+  };
+
+  const handleDeclineInvitation = async (meetId: string) => {
+    const userEmail = email.trim().toLowerCase() || 'admin@zidio.com';
+    
+    const meetIndex = scheduledMeetings.findIndex(m => m.id === meetId);
+    if (meetIndex === -1) return;
+
+    const meet = scheduledMeetings[meetIndex];
+    const updatedResponses = { ...meet.responses, [userEmail]: 'declined' as const };
+    const updatedMeet = { ...meet, responses: updatedResponses };
+
+    setScheduledMeetings(prev => {
+      const updated = prev.map(m => m.id === meetId ? updatedMeet : m);
+      localStorage.setItem('intellmeet_scheduled_v2', JSON.stringify(updated));
+      return updated;
+    });
+
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        await supabase
+          .from('scheduled_meetings')
+          .update({ responses: updatedResponses })
+          .eq('id', meetId);
+      } catch (err) {
+        console.warn("Supabase update responses error", err);
+      }
+    }
+
+    // Send declination email back to host
+    sendEmailNotification(
+      'host@zidio.com',
+      `Invitation Declined: ${meet.title}`,
+      `Hello,\n\n${username} (${userEmail}) has declined your invitation to attend "${meet.title}" scheduled for ${new Date(meet.dateTime).toLocaleString()}.`
+    );
   };
 
   const getActiveMeetings = () => {
@@ -1566,15 +2074,25 @@ export default function App() {
     setRecordings(prev => prev.filter(r => r.id !== recId));
   };
 
-  if (!isAuthenticated) {
+  const renderAuthModal = () => {
+    if (!showAuthModal) return null;
     const formattedTimer = `${Math.floor(otpTimer / 60).toString().padStart(2, '0')}:${(otpTimer % 60).toString().padStart(2, '0')}`;
 
     return (
-      <div className="auth-container">
-        <div className="auth-card 3d-effect" style={{ position: 'relative' }}>
+      <div className="modal-overlay" style={{ zIndex: 2000 }}>
+        <div className="modal-content 3d-effect" style={{ maxWidth: '420px', padding: '2.5rem', position: 'relative' }}>
+          <button 
+            className="btn btn-secondary" 
+            style={{ position: 'absolute', top: '15px', right: '15px', padding: '0.25rem 0.5rem', minWidth: 'auto' }} 
+            onClick={() => setShowAuthModal(false)}
+          >
+            ✕
+          </button>
+          
           {/* Supabase Config Toggle Button */}
           <button 
             className="supabase-config-toggle" 
+            style={{ right: 'auto', left: '1rem' }}
             onClick={() => {
               setSupaUrlInput(localStorage.getItem('INTELLMEET_SUPABASE_URL') || '');
               setSupaKeyInput(localStorage.getItem('INTELLMEET_SUPABASE_ANON_KEY') || '');
@@ -1604,7 +2122,6 @@ export default function App() {
               Local Sandbox Mode
             </div>
           )}
-
           {isOtpMode ? (
             <div>
               <h2 className="auth-title">Verify Registration</h2>
@@ -1832,7 +2349,7 @@ export default function App() {
         )}
       </div>
     );
-  }
+  };
 
   return (
     <div className="app-container">
@@ -1924,19 +2441,101 @@ export default function App() {
             <Video size={18} />
             <span>Recordings</span>
           </button>
+
+          <button 
+            className={`nav-item ${currentTab === 'settings' ? 'active' : ''}`}
+            onClick={() => setCurrentTab('settings')}
+          >
+            <Settings size={18} />
+            <span>Settings</span>
+          </button>
         </nav>
         
-        <div className="user-profile-widget">
+        {/* Redesigned Account Widget */}
+        <div className="user-profile-widget" style={{ position: 'relative', cursor: 'pointer' }} onClick={() => setShowAccountMenu(!showAccountMenu)}>
           <div className="user-avatar" style={{ border: 'none', background: 'transparent' }}>
-            {AVATAR_LOGOS[selectedAvatarIdx]}
+            {renderUserAvatar()}
           </div>
           <div className="user-info">
-            <span className="user-name">{username}</span>
-            <span className="user-role">{position}</span>
+            <span className="user-name">{isAuthenticated ? username : 'Account'}</span>
+            <span className="user-role" style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+              {isAuthenticated ? position : 'Guest Mode'}
+            </span>
           </div>
-          <button className="logout-btn" onClick={handleLogout} title="Log Out">
-            <LogOut size={18} />
-          </button>
+          
+          {/* Dropdown Menu */}
+          {showAccountMenu && (
+            <div className="account-dropdown 3d-effect" style={{
+              position: 'absolute',
+              bottom: '100%',
+              left: '10px',
+              backgroundColor: 'var(--bg-primary)',
+              border: '1px solid var(--color-border)',
+              borderRadius: '8px',
+              padding: '1.75rem 0.75rem 0.75rem 0.75rem',
+              boxShadow: 'var(--shadow-lg)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.25rem',
+              zIndex: 1000,
+              minWidth: '160px',
+              marginBottom: '8px'
+            }} onClick={(e) => e.stopPropagation()}>
+              
+              {/* Close Button X */}
+              <button 
+                style={{
+                  position: 'absolute',
+                  top: '6px',
+                  right: '8px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  fontSize: '0.75rem',
+                  fontWeight: 'bold',
+                  padding: '2px 4px'
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowAccountMenu(false);
+                }}
+              >
+                ✕
+              </button>
+
+              {!isAuthenticated ? (
+                <>
+                  <button className="btn btn-primary btn-sm 3d-button" style={{ justifyContent: 'center' }} onClick={() => {
+                    setIsRegisterMode(false);
+                    setShowAuthModal(true);
+                    setShowAccountMenu(false);
+                  }}>
+                    Log In
+                  </button>
+                  <button className="btn btn-secondary btn-sm 3d-button" style={{ justifyContent: 'center' }} onClick={() => {
+                    setIsRegisterMode(true);
+                    setShowAuthModal(true);
+                    setShowAccountMenu(false);
+                  }}>
+                    Sign Up
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', borderBottom: '1px solid var(--color-border)', marginBottom: '0.25rem' }}>
+                    Signed in as: <b>{email}</b>
+                  </div>
+                  <button className="btn btn-danger btn-sm 3d-button" style={{ display: 'flex', gap: '0.5rem', width: '100%', justifyContent: 'center' }} onClick={() => {
+                    handleLogout();
+                    setShowAccountMenu(false);
+                  }}>
+                    <LogOut size={12} /> Log Out
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </aside>
 
@@ -1950,13 +2549,113 @@ export default function App() {
           <div>
             <div className="workspace-header">
               <div>
-                <h1 className="workspace-title">Welcome Back, {username}!</h1>
+                <h1 className="workspace-title">{isAuthenticated ? `Welcome Back, ${username}!` : 'Welcome to IntellMeet!'}</h1>
               </div>
               <div className="flex gap-2">
                 <button className="btn btn-secondary 3d-button" onClick={() => setShowScheduleModal(true)}>Schedule Meeting</button>
                 <button className="btn btn-primary 3d-button" onClick={() => setShowJoinSetupModal(true)}>Start Instant Meeting</button>
               </div>
             </div>
+
+            {/* Join Meeting card for guests or anyone */}
+            <div className="dashboard-card col-12 3d-effect mb-4" style={{
+              background: 'linear-gradient(135deg, var(--bg-primary) 0%, #eff6ff 100%)',
+              border: '2px solid var(--color-primary)'
+            }}>
+              <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-primary)' }}>
+                🚀 Join a Meeting
+              </h3>
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
+                Enter the Meeting ID and Passcode to join an active call instantly. No account required to participate!
+              </p>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gap: '1rem',
+                alignItems: 'flex-end'
+              }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Meeting ID or Link</label>
+                  <input 
+                    type="text" 
+                    className="form-input 3d-effect" 
+                    placeholder="e.g. MEET-XXXX-XXXX or paste Join Link" 
+                    value={joinMeetIdInput}
+                    onChange={(e) => setJoinMeetIdInput(e.target.value)}
+                  />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Passcode</label>
+                  <input 
+                    type="password" 
+                    className="form-input 3d-effect" 
+                    placeholder="e.g. 123456" 
+                    value={joinMeetPassInput}
+                    onChange={(e) => setJoinMeetPassInput(e.target.value)}
+                  />
+                </div>
+                {!isAuthenticated && (
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Your Display Name</label>
+                    <input 
+                      type="text" 
+                      className="form-input 3d-effect" 
+                      placeholder="Enter name to display" 
+                      value={guestDisplayName}
+                      onChange={(e) => setGuestDisplayName(e.target.value)}
+                    />
+                  </div>
+                )}
+                <button 
+                  className="btn btn-primary 3d-button" 
+                  style={{ height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  onClick={handleJoinMeetingFromCard}
+                >
+                  Join Meeting
+                </button>
+              </div>
+            </div>
+
+
+
+            {/* 📩 Pending Invitations Inbox (Private Meetings) */}
+            {scheduledMeetings.filter(m => 
+              m.meetingType === 'private' && 
+              m.invitedEmails?.includes(email.trim().toLowerCase() || 'admin@zidio.com') && 
+              m.responses?.[email.trim().toLowerCase() || 'admin@zidio.com'] === 'pending'
+            ).length > 0 && (
+              <div className="dashboard-card col-12 3d-effect mb-4" style={{ borderLeft: '4px solid var(--color-primary)', backgroundColor: '#f0f9ff' }}>
+                <h3 className="card-title" style={{ color: 'var(--color-primary)' }}>📩 Pending Meeting Invitations</h3>
+                <div className="meeting-list">
+                  {scheduledMeetings.filter(m => 
+                    m.meetingType === 'private' && 
+                    m.invitedEmails?.includes(email.trim().toLowerCase() || 'admin@zidio.com') && 
+                    m.responses?.[email.trim().toLowerCase() || 'admin@zidio.com'] === 'pending'
+                  ).map(meet => (
+                    <div key={meet.id} className="meeting-item" style={{ backgroundColor: 'white' }}>
+                      <div className="meeting-info">
+                        <div className="meeting-icon" style={{ backgroundColor: 'var(--color-primary)' }}>
+                          <Users size={20} />
+                        </div>
+                        <div className="meeting-details">
+                          <h4 style={{ fontWeight: 600 }}>{meet.title}</h4>
+                          <p>Host: <strong>{meet.host}</strong> • Scheduled: {new Date(meet.dateTime).toLocaleString()} • Recurrence: <span style={{ textTransform: 'capitalize' }}>{meet.recurrence}</span></p>
+                          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>ID: {meet.id} • Passcode: {meet.password}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button className="btn btn-primary 3d-button" onClick={() => handleAcceptInvitation(meet.id)} style={{ backgroundColor: 'var(--color-success)' }}>
+                          Accept
+                        </button>
+                        <button className="btn btn-danger 3d-button" onClick={() => handleDeclineInvitation(meet.id)}>
+                          Decline
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Scheduled Meetings full-width block */}
             <div className="dashboard-card col-12 3d-effect mb-4">
@@ -1968,33 +2667,59 @@ export default function App() {
                 {scheduledMeetings.filter(m => !m.isHostJoined).length > 0 ? (
                   scheduledMeetings.filter(m => !m.isHostJoined).map(meet => {
                     const isEnabled = getButtonStatus(meet.dateTime);
+                    const expired = isMeetingExpired(meet);
+                    
+                    // Count responses for host presentation
+                    let responseSummary = "";
+                    if (meet.meetingType === 'private' && meet.responses) {
+                      const counts = { accepted: 0, declined: 0, pending: 0 };
+                      Object.values(meet.responses).forEach(val => {
+                        counts[val]++;
+                      });
+                      responseSummary = `Invites: ${counts.accepted} accepted, ${counts.declined} declined, ${counts.pending} pending`;
+                    }
+
                     return (
-                      <div key={meet.id} className="meeting-item" style={{ marginBottom: '1rem' }}>
+                      <div key={meet.id} className="meeting-item" style={{ marginBottom: '1rem', opacity: expired ? 0.6 : 1 }}>
                         <div className="meeting-info">
-                          <div className="meeting-icon" style={{ backgroundColor: isEnabled ? 'var(--color-primary)' : '#94a3b8' }}>
+                          <div className="meeting-icon" style={{ backgroundColor: expired ? 'var(--color-danger)' : (isEnabled ? 'var(--color-primary)' : '#94a3b8') }}>
                             <History size={20} />
                           </div>
                           <div className="meeting-details">
-                            <h4>{meet.title}</h4>
+                            <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              {meet.title}
+                              <span className="badge badge-blue" style={{ fontSize: '0.65rem' }}>{meet.meetingType.toUpperCase()}</span>
+                              {meet.meetingType === 'private' && <span className="badge badge-green" style={{ fontSize: '0.65rem', textTransform: 'capitalize' }}>{meet.recurrence}</span>}
+                            </h4>
                             <p>Host: {meet.host} • Scheduled: {new Date(meet.dateTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                            <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                              ID: <strong>{meet.id}</strong> • Passcode: <strong>{meet.password || 'None'}</strong>
+                              {meet.meetingType === 'public' && ` • Duration: ${meet.duration} mins`}
+                              {responseSummary && ` • ${responseSummary}`}
+                            </p>
                           </div>
                         </div>
                         <div>
-                          <button 
-                            className={`btn 3d-button ${isEnabled ? 'btn-primary' : 'btn-secondary'}`}
-                            disabled={!isEnabled}
-                            onClick={() => {
-                              setMeetingTitle(meet.title);
-                              setActiveJoiningScheduledId(meet.id);
-                              setShowJoinSetupModal(true);
-                            }}
-                            style={{ 
-                              opacity: isEnabled ? 1 : 0.6,
-                              cursor: isEnabled ? 'pointer' : 'not-allowed'
-                            }}
-                          >
-                            Join Room
-                          </button>
+                          {expired ? (
+                            <span className="badge badge-red font-semibold">EXPIRED</span>
+                          ) : (
+                            <button 
+                              className={`btn 3d-button ${isEnabled ? 'btn-primary' : 'btn-secondary'}`}
+                              disabled={!isEnabled}
+                              onClick={() => {
+                                setMeetingTitle(meet.title);
+                                setMeetingId(meet.id);
+                                setActiveJoiningScheduledId(meet.id);
+                                setShowJoinSetupModal(true);
+                              }}
+                              style={{ 
+                                opacity: isEnabled ? 1 : 0.6,
+                                cursor: isEnabled ? 'pointer' : 'not-allowed'
+                              }}
+                            >
+                              Join Room
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -2065,55 +2790,108 @@ export default function App() {
               </div>
 
               {/* Session Activity Log Widget */}
-              <div className="dashboard-card col-12 3d-effect">
-                <h3 className="card-title">📋 Session Activity Log</h3>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '1.25rem' }}>
-                  Track login and logout cycles for team auditing.
-                </p>
-                <div style={{ maxHeight: '250px', overflowY: 'auto', borderRadius: '6px', border: '1px solid var(--color-border)', backgroundColor: 'var(--bg-secondary)' }}>
-                  {sessionLogs.length > 0 ? (
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem', textAlign: 'left' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: 'var(--bg-primary)' }}>
-                          <th style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-primary)' }}>User</th>
-                          <th style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-primary)' }}>Action</th>
-                          <th style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-primary)' }}>Timestamp</th>
-                          <th style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-primary)' }}>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {sessionLogs.map((log) => (
-                          <tr key={log.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                            <td style={{ padding: '0.75rem 1rem', fontWeight: 500, color: 'var(--text-primary)' }}>{log.username}</td>
-                            <td style={{ padding: '0.75rem 1rem' }}>
-                              <span className={`badge ${log.action === 'login' ? 'badge-green' : 'badge-red'}`} style={{ textTransform: 'capitalize' }}>
-                                {log.action === 'login' ? 'Logged In' : 'Logged Out'}
-                              </span>
-                            </td>
-                            <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>{log.timestamp}</td>
-                            <td style={{ padding: '0.75rem 1rem' }}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)' }}>
-                                <span style={{
-                                  width: '8px',
-                                  height: '8px',
-                                  borderRadius: '50%',
-                                  backgroundColor: log.action === 'login' ? 'var(--color-success)' : '#94a3b8',
-                                  display: 'inline-block'
-                                }}></span>
-                                {log.action === 'login' ? 'Active Session' : 'Disconnected'}
-                              </span>
-                            </td>
+              {isAuthenticated && (
+                <div className="dashboard-card col-12 3d-effect">
+                  <h3 className="card-title">📋 Session Activity Log</h3>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '1.25rem' }}>
+                    Track login and logout cycles for team auditing.
+                  </p>
+                  <div style={{ maxHeight: '250px', overflowY: 'auto', borderRadius: '6px', border: '1px solid var(--color-border)', backgroundColor: 'var(--bg-secondary)' }}>
+                    {sessionLogs.filter(log => log.username.toLowerCase() === username.toLowerCase()).length > 0 ? (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem', textAlign: 'left' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: 'var(--bg-primary)' }}>
+                            <th style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-primary)' }}>User</th>
+                            <th style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-primary)' }}>Action</th>
+                            <th style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-primary)' }}>Timestamp</th>
+                            <th style={{ padding: '0.75rem 1rem', fontWeight: 600, color: 'var(--text-primary)' }}>Status</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-secondary)' }}>
-                      No recent session logs recorded. Try logging in or out.
-                    </div>
-                  )}
+                        </thead>
+                        <tbody>
+                          {sessionLogs.filter(log => log.username.toLowerCase() === username.toLowerCase()).map((log) => (
+                            <tr key={log.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                              <td style={{ padding: '0.75rem 1rem', fontWeight: 500, color: 'var(--text-primary)' }}>{log.username}</td>
+                              <td style={{ padding: '0.75rem 1rem' }}>
+                                <span className={`badge ${log.action === 'login' ? 'badge-green' : 'badge-red'}`} style={{ textTransform: 'capitalize' }}>
+                                  {log.action === 'login' ? 'Logged In' : 'Logged Out'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '0.75rem 1rem', color: 'var(--text-secondary)' }}>{log.timestamp}</td>
+                              <td style={{ padding: '0.75rem 1rem' }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)' }}>
+                                  <span style={{
+                                    width: '8px',
+                                    height: '8px',
+                                    borderRadius: '50%',
+                                    backgroundColor: log.action === 'login' ? 'var(--color-success)' : '#94a3b8',
+                                    display: 'inline-block'
+                                  }}></span>
+                                  {log.action === 'login' ? 'Active Session' : 'Disconnected'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-secondary)' }}>
+                        No recent session logs recorded. Try logging in or out.
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {/* 📬 Outgoing Mail & Notification Logs */}
+              {isAuthenticated && (
+                <div className="dashboard-card col-12 3d-effect">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                    <div>
+                      <h3 className="card-title" style={{ margin: 0 }}>📬 Outgoing Mail & Notification Logs</h3>
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+                        Monitor invitations, reminders, and confirmations sent to project members.
+                      </p>
+                    </div>
+                    {userEmailLogs.length > 0 && (
+                      <button 
+                        className="btn btn-secondary 3d-button" 
+                        onClick={() => {
+                          localStorage.removeItem('intellmeet_emaillogs');
+                          setEmailLogs([]);
+                        }}
+                        style={{ padding: '0.4rem 1rem', fontSize: '0.8rem' }}
+                      >
+                        Clear Logs
+                      </button>
+                    )}
+                  </div>
+
+                  <div style={{ maxHeight: '300px', overflowY: 'auto', borderRadius: '8px', border: '1px solid var(--color-border)', backgroundColor: '#f8fafc' }}>
+                    {userEmailLogs.length > 0 ? (
+                      <div style={{ padding: '1rem' }}>
+                        {userEmailLogs.map((log) => (
+                          <div key={log.id} style={{ padding: '1rem', backgroundColor: 'white', border: '1px solid var(--color-border)', borderRadius: '8px', marginBottom: '0.75rem', boxShadow: 'var(--shadow-sm)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--color-border)', paddingBottom: '0.5rem', marginBottom: '0.5rem', fontSize: '0.8rem' }}>
+                              <span style={{ color: '#2563eb', fontWeight: 600 }}>✉️ TO: {log.to}</span>
+                              <span style={{ color: 'var(--text-muted)' }}>{log.timestamp} • {log.id}</span>
+                            </div>
+                            <div style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+                              Subject: {log.subject}
+                            </div>
+                            <div style={{ fontSize: '0.825rem', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', fontFamily: 'monospace', backgroundColor: '#fdfdfd', padding: '0.5rem', borderRadius: '4px', border: '1px solid #f1f5f9' }}>
+                              {log.body.replace(/\\n/g, '\n')}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-secondary)' }}>
+                        📬 No outgoing mail logs recorded. Schedule a meeting to trigger notifications.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -2138,13 +2916,13 @@ export default function App() {
                   <div className={`video-feed ${!isMuted ? 'active-speaker' : ''} 3d-effect`}>
                     {isCamOff ? (
                       <div className="user-avatar" style={{ width: '80px', height: '80px', background: 'transparent' }}>
-                        {AVATAR_LOGOS[selectedAvatarIdx]}
+                        {renderUserAvatar({ width: '80px', height: '80px' })}
                       </div>
                     ) : (
                       <canvas ref={myVideoRef} width="320" height="180"></canvas>
                     )}
                     <span className="participant-label">
-                      <div style={{width: '20px', height: '20px', display: 'inline-block'}}>{AVATAR_LOGOS[selectedAvatarIdx]}</div>
+                      <div style={{width: '20px', height: '20px', display: 'inline-block'}}>{renderUserAvatar({ width: '20px', height: '20px' })}</div>
                       {username} (You)
                     </span>
                   </div>
@@ -2242,7 +3020,7 @@ export default function App() {
                           maxWidth: '85%'
                         }}>
                           <div style={{width: '24px', height: '24px', flexShrink: 0}}>
-                            {AVATAR_LOGOS[msg.avatarLogoIndex !== undefined ? msg.avatarLogoIndex : 0]}
+                            {msg.sender === username ? renderUserAvatar({ width: '24px', height: '24px' }) : AVATAR_LOGOS[msg.avatarLogoIndex !== undefined ? msg.avatarLogoIndex : 0]}
                           </div>
                           <div>
                             <div className="message-speaker">{msg.sender} <span style={{fontSize: '0.65rem', color: 'var(--text-muted)'}}>{msg.time}</span></div>
@@ -2354,6 +3132,7 @@ export default function App() {
             KANBAN BOARD VIEW
             ========================================== */}
         {currentTab === 'kanban' && (
+          !isAuthenticated ? renderLockedFeaturePlaceholder("Task Management Hub", "Collaborate with your team using our integrated Kanban board. Track action items, assign subtasks, and manage work items extracted automatically by our AI meeting assistant.") : (
           <div>
             <div className="workspace-header">
               <div>
@@ -2456,12 +3235,14 @@ export default function App() {
               ))}
             </div>
           </div>
+          )
         )}
 
         {/* ==========================================
             AI ANALYTICS VIEW
             ========================================== */}
         {currentTab === 'analytics' && (
+          !isAuthenticated ? renderLockedFeaturePlaceholder("AI Analytics & Insights", "Get advanced productivity analytics, sentiment trends, speaker talk-time distribution, and AI-driven efficiency reports for all your workspace meetings.") : (
           <div>
             <div className="workspace-header">
               <div>
@@ -2505,12 +3286,14 @@ export default function App() {
               </div>
             </div>
           </div>
+          )
         )}
 
         {/* ==========================================
             MEETING HISTORY VIEW
             ========================================== */}
         {currentTab === 'history' && (
+          !isAuthenticated ? renderLockedFeaturePlaceholder("Past Meetings & Summaries", "Access your archived meetings list, search past transcripts, review auto-generated summaries, and export action items to PDF or CSV.") : (
           <div>
             <div className="workspace-header">
               <div>
@@ -2564,12 +3347,14 @@ export default function App() {
               </table>
             </div>
           </div>
+          )
         )}
 
         {/* ==========================================
             RECORDINGS VIEW
             ========================================== */}
         {currentTab === 'recordings' && (
+          !isAuthenticated ? renderLockedFeaturePlaceholder("Meeting Session Recordings", "Save your interactive meetings locally, replay captured speaker screen streams with high fidelity, and download structured outputs.") : (
           <div>
             <div className="workspace-header">
               <div>
@@ -2609,7 +3394,291 @@ export default function App() {
               )}
             </div>
           </div>
+          )
         )}
+
+        {currentTab === 'settings' && (
+          <div>
+            <div className="workspace-header">
+              <div>
+                <h1 className="workspace-title">⚙️ Settings</h1>
+                <p style={{color: 'var(--text-secondary)'}}>Configure your personal profile and meeting preferences</p>
+              </div>
+            </div>
+
+            <div className="dashboard-grid">
+              
+              {/* Meeting System Preferences */}
+              <div className="dashboard-card col-6 3d-effect">
+                <h3 className="card-title">🎥 Meeting Preferences</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginTop: '1rem' }}>
+                  
+                  {/* Auto Mute */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <h4 style={{ fontWeight: 600, fontSize: '0.95rem' }}>Auto-mute microphone</h4>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Mute your microphone automatically when joining a meeting room.</p>
+                    </div>
+                    <label className="switch-container">
+                      <input 
+                        type="checkbox" 
+                        checked={prefAutoMute} 
+                        onChange={(e) => {
+                          setPrefAutoMute(e.target.checked);
+                          localStorage.setItem('pref_auto_mute', e.target.checked ? 'true' : 'false');
+                        }}
+                      />
+                      <span className="slider-round"></span>
+                    </label>
+                  </div>
+
+                  {/* Auto Camera Off */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <h4 style={{ fontWeight: 600, fontSize: '0.95rem' }}>Auto-turn off video camera</h4>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Turn video camera off automatically when joining a meeting room.</p>
+                    </div>
+                    <label className="switch-container">
+                      <input 
+                        type="checkbox" 
+                        checked={prefAutoCameraOff} 
+                        onChange={(e) => {
+                          setPrefAutoCameraOff(e.target.checked);
+                          localStorage.setItem('pref_auto_camera_off', e.target.checked ? 'true' : 'false');
+                        }}
+                      />
+                      <span className="slider-round"></span>
+                    </label>
+                  </div>
+
+                  {/* Mirror Video */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <h4 style={{ fontWeight: 600, fontSize: '0.95rem' }}>Mirror my video stream</h4>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Flip your webcam feed horizontally for a natural self-view.</p>
+                    </div>
+                    <label className="switch-container">
+                      <input 
+                        type="checkbox" 
+                        checked={prefMirrorVideo} 
+                        onChange={(e) => {
+                          setPrefMirrorVideo(e.target.checked);
+                          localStorage.setItem('pref_mirror_video', e.target.checked ? 'true' : 'false');
+                        }}
+                      />
+                      <span className="slider-round"></span>
+                    </label>
+                  </div>
+
+                  {/* Participant Name Tags */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <h4 style={{ fontWeight: 600, fontSize: '0.95rem' }}>Show participant name tags</h4>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Overlay names on participant video feeds during active calls.</p>
+                    </div>
+                    <label className="switch-container">
+                      <input 
+                        type="checkbox" 
+                        checked={prefShowNames} 
+                        onChange={(e) => {
+                          setPrefShowNames(e.target.checked);
+                          localStorage.setItem('pref_show_names', e.target.checked ? 'true' : 'false');
+                        }}
+                      />
+                      <span className="slider-round"></span>
+                    </label>
+                  </div>
+
+                  {/* Noise Suppression */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <h4 style={{ fontWeight: 600, fontSize: '0.95rem' }}>AI background noise suppression</h4>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Filter out ambient hums and background clicks.</p>
+                    </div>
+                    <label className="switch-container">
+                      <input 
+                        type="checkbox" 
+                        checked={prefNoiseSuppress} 
+                        onChange={(e) => {
+                          setPrefNoiseSuppress(e.target.checked);
+                          localStorage.setItem('pref_noise_suppress', e.target.checked ? 'true' : 'false');
+                        }}
+                      />
+                      <span className="slider-round"></span>
+                    </label>
+                  </div>
+
+                  {/* Theme Mode Toggle (Light/Dark) */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--color-border)', paddingTop: '1rem' }}>
+                    <div>
+                      <h4 style={{ fontWeight: 600, fontSize: '0.95rem' }}>Appearance Mode</h4>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Toggle between light theme and sleek dark mode.</p>
+                    </div>
+                    <button className="btn btn-secondary 3d-button" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }} onClick={toggleTheme}>
+                      {isDarkMode ? <Sun size={14} /> : <Moon size={14} />} {isDarkMode ? 'Light Mode' : 'Dark Mode'}
+                    </button>
+                  </div>
+
+                </div>
+              </div>
+
+              {/* Personal Profile Panel */}
+              <div className="dashboard-card col-6 3d-effect">
+                <h3 className="card-title">👤 Personal Profile Info</h3>
+                
+                {/* Profile Photo Live Capture and Local Upload */}
+                <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', margin: '1.25rem 0', padding: '1rem', backgroundColor: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
+                  <div style={{ width: '80px', height: '80px', borderRadius: '50%', overflow: 'hidden', border: '2px solid var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {renderUserAvatar({ width: '80px', height: '80px' })}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flexGrow: 1 }}>
+                    <label className="btn btn-secondary btn-sm 3d-button" style={{ cursor: 'pointer', textAlign: 'center', width: '100%', justifyContent: 'center' }}>
+                      📁 Upload Photo file
+                      <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileUpload} />
+                    </label>
+                    <button className="btn btn-primary btn-sm 3d-button" style={{ width: '100%', justifyContent: 'center' }} onClick={isWebcamActive ? stopWebcam : startWebcam}>
+                      📷 {isWebcamActive ? 'Stop Camera' : 'Take Live Photo'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Webcam Stream Preview Box */}
+                {isWebcamActive && (
+                  <div className="3d-effect" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', padding: '1rem', backgroundColor: '#0f172a', borderRadius: '12px', marginBottom: '1.25rem' }}>
+                    <video ref={webcamVideoRef} style={{ width: '100%', maxHeight: '180px', borderRadius: '8px', objectFit: 'cover' }} playsInline muted />
+                    {cameraError && <p style={{ color: '#ef4444', fontSize: '0.8rem' }}>{cameraError}</p>}
+                    <button className="btn btn-success btn-sm 3d-button" onClick={captureWebcamSnapshot}>
+                      📸 Capture & Set Profile Photo
+                    </button>
+                  </div>
+                )}
+
+                {/* Info Fields */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Full Name</label>
+                    <input 
+                      type="text" 
+                      className="form-input 3d-effect" 
+                      value={username} 
+                      onChange={(e) => setUsername(e.target.value)} 
+                      placeholder="Guest" 
+                    />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Email Address</label>
+                    <input 
+                      type="email" 
+                      className="form-input 3d-effect" 
+                      value={email} 
+                      onChange={(e) => setEmail(e.target.value)} 
+                      disabled={!isAuthenticated}
+                      placeholder={isAuthenticated ? "admin@zidio.com" : "Sign in to set email"} 
+                    />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Phone Number</label>
+                    <input 
+                      type="text" 
+                      className="form-input 3d-effect" 
+                      value={userPhone} 
+                      onChange={(e) => setUserPhone(e.target.value)} 
+                      placeholder="e.g. +1 555-0199" 
+                    />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Date of Birth (mm/dd/yyyy)</label>
+                    <input 
+                      type="text" 
+                      className="form-input 3d-effect" 
+                      value={userDob} 
+                      onChange={(e) => setUserDob(e.target.value)} 
+                      placeholder="e.g. 05/20/1998" 
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Password Controller Section */}
+              <div className="dashboard-card col-12 3d-effect">
+                <h3 className="card-title">🔒 Password Management</h3>
+                {!isAuthenticated ? (
+                  <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                    🔒 Password modification features are only available to authenticated workspace accounts.
+                  </div>
+                ) : (
+                  <form onSubmit={handlePasswordChange} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginTop: '1rem' }}>
+                    
+                    {/* Input columns */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label">Current Password</label>
+                        <input 
+                          type="password" 
+                          className="form-input 3d-effect" 
+                          value={currentPasswordInput} 
+                          onChange={(e) => setCurrentPasswordInput(e.target.value)} 
+                          required 
+                        />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label">New Password</label>
+                        <input 
+                          type="password" 
+                          className="form-input 3d-effect" 
+                          value={newPasswordInput} 
+                          onChange={(e) => setNewPasswordInput(e.target.value)} 
+                          required 
+                        />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label">Confirm New Password</label>
+                        <input 
+                          type="password" 
+                          className="form-input 3d-effect" 
+                          value={confirmPasswordInput} 
+                          onChange={(e) => setConfirmPasswordInput(e.target.value)} 
+                          required 
+                        />
+                      </div>
+                      {passwordChangeError && <p style={{ color: 'var(--color-danger)', fontSize: '0.8rem', marginTop: '0.25rem' }}>❌ {passwordChangeError}</p>}
+                      {passwordChangeStatus && <p style={{ color: 'var(--color-success)', fontSize: '0.8rem', marginTop: '0.25rem' }}>✅ {passwordChangeStatus}</p>}
+                      
+                      <button type="submit" className="btn btn-primary 3d-button" style={{ marginTop: '0.5rem', width: 'fit-content' }}>
+                        Change Password
+                      </button>
+                    </div>
+
+                    {/* Password Strength Requirement Checklist */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '1rem', backgroundColor: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
+                      <h4 style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.25rem' }}>Password Strength Requirements:</h4>
+                      <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.825rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                        <li style={{ color: pwValidations.length ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                          {pwValidations.length ? '✅' : '❌'} Minimum 8 characters
+                        </li>
+                        <li style={{ color: pwValidations.uppercase ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                          {pwValidations.uppercase ? '✅' : '❌'} At least 1 uppercase letter (A-Z)
+                        </li>
+                        <li style={{ color: pwValidations.lowercase ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                          {pwValidations.lowercase ? '✅' : '❌'} At least 1 lowercase letter (a-z)
+                        </li>
+                        <li style={{ color: pwValidations.number ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                          {pwValidations.number ? '✅' : '❌'} At least 1 number (0-9)
+                        </li>
+                        <li style={{ color: pwValidations.special ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                          {pwValidations.special ? '✅' : '❌'} At least 1 special character (e.g. @, #, $, %, etc.)
+                        </li>
+                      </ul>
+                    </div>
+
+                  </form>
+                )}
+              </div>
+
+            </div>
+          </div>
+        )}
+
 
       </main>
 
@@ -2641,7 +3710,7 @@ export default function App() {
                 }}>
                   {isCamOff ? (
                     <div className="user-avatar" style={{ width: '70px', height: '70px', background: 'transparent' }}>
-                      {AVATAR_LOGOS[selectedAvatarIdx]}
+                      {renderUserAvatar({ width: '70px', height: '70px' })}
                     </div>
                   ) : (
                     <video ref={previewVideoRef} style={{ width: '100%', height: '100%', objectFit: 'cover' }} playsInline muted />
@@ -2819,9 +3888,9 @@ export default function App() {
       {/* Schedule Modal */}
       {showScheduleModal && (
         <div className="modal-overlay">
-          <div className="modal-content 3d-effect">
+          <div className="modal-content 3d-effect" style={{ maxWidth: '520px' }}>
             <div className="modal-header">
-              <h3>Schedule Meeting</h3>
+              <h3>📅 Schedule New Meeting</h3>
             </div>
             <div className="modal-body">
               <div className="form-group">
@@ -2829,7 +3898,7 @@ export default function App() {
                 <input 
                   type="text" 
                   className="form-input 3d-effect" 
-                  placeholder="e.g. Sprint Planning Sync" 
+                  placeholder="e.g. Q3 Roadmap Align" 
                   value={schedTitle}
                   onChange={(e) => setSchedTitle(e.target.value)}
                 />
@@ -2843,6 +3912,67 @@ export default function App() {
                   onChange={(e) => setSchedDateTime(e.target.value)}
                 />
               </div>
+
+              {/* Meeting Type Selector */}
+              <div className="form-group">
+                <label className="form-label">Meeting Privacy</label>
+                <select 
+                  className="form-input 3d-effect"
+                  value={schedMeetingType}
+                  onChange={(e) => setSchedMeetingType(e.target.value as 'public' | 'private')}
+                >
+                  <option value="public">Public (Anyone with link/password can join)</option>
+                  <option value="private">Private (Invite-only by Email ID)</option>
+                </select>
+              </div>
+
+              {/* Public Specific Configuration */}
+              {schedMeetingType === 'public' && (
+                <div className="form-group animate-fade-in" style={{ backgroundColor: '#f0fdf4', padding: '0.75rem', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                  <label className="form-label">Meeting Duration (Time Frame)</label>
+                  <select 
+                    className="form-input 3d-effect"
+                    value={schedDuration}
+                    onChange={(e) => setSchedDuration(Number(e.target.value))}
+                  >
+                    <option value={15}>15 Minutes</option>
+                    <option value={30}>30 Minutes</option>
+                    <option value={60}>1 Hour</option>
+                    <option value={120}>2 Hours</option>
+                  </select>
+                  <p style={{ fontSize: '0.75rem', color: '#16a34a', marginTop: '0.25rem' }}>ℹ️ Public meeting IDs expire automatically after this duration.</p>
+                </div>
+              )}
+
+              {/* Private Specific Configuration */}
+              {schedMeetingType === 'private' && (
+                <div className="animate-fade-in" style={{ backgroundColor: '#eff6ff', padding: '1rem', borderRadius: '12px', border: '1px solid #bfdbfe' }}>
+                  <div className="form-group">
+                    <label className="form-label">Recurrence Interval</label>
+                    <select 
+                      className="form-input 3d-effect"
+                      value={schedRecurrence}
+                      onChange={(e) => setSchedRecurrence(e.target.value as 'none' | 'daily' | 'weekly')}
+                    >
+                      <option value="none">One-Time Meeting</option>
+                      <option value="daily">Daily Recurring</option>
+                      <option value="weekly">Weekly Recurring</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Invite Members (emails separated by comma)</label>
+                    <textarea 
+                      className="form-input 3d-effect" 
+                      placeholder="e.g. member1@zidio.com, coworker@zidio.com"
+                      value={schedInvitedEmails}
+                      onChange={(e) => setSchedInvitedEmails(e.target.value)}
+                      rows={3}
+                      style={{ resize: 'none', fontFamily: 'inherit' }}
+                    />
+                    <p style={{ fontSize: '0.725rem', color: '#2563eb', marginTop: '0.25rem' }}>✉️ Invited members will receive an invite email to Accept or Decline.</p>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="modal-footer">
               <button 
@@ -2850,6 +3980,8 @@ export default function App() {
                 onClick={() => {
                   setSchedTitle('');
                   setSchedDateTime('');
+                  setSchedInvitedEmails('');
+                  setSchedMeetingType('public');
                   setShowScheduleModal(false);
                 }}
               >
@@ -2859,13 +3991,63 @@ export default function App() {
                 className="btn btn-primary 3d-button" 
                 onClick={() => {
                   handleScheduleMeeting(schedTitle, schedDateTime);
-                  setSchedTitle('');
-                  setSchedDateTime('');
                   setShowScheduleModal(false);
                 }}
                 disabled={!schedTitle.trim() || !schedDateTime.trim()}
               >
-                Schedule Sync
+                Schedule Meeting
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Passcode Confirmation Modal */}
+      {showPasscodeAlert && lastScheduledMeet && (
+        <div className="modal-overlay" style={{ zIndex: 1100 }}>
+          <div className="modal-content 3d-effect" style={{ maxWidth: '520px' }}>
+            <div className="modal-header">
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>🚀 Meeting Successfully Scheduled</h3>
+            </div>
+            <div className="modal-body" style={{ fontSize: '0.875rem', lineHeight: '1.6' }}>
+              <div style={{ padding: '1rem', backgroundColor: 'var(--bg-secondary)', borderRadius: '12px', border: '1px solid var(--color-border)', marginBottom: '1rem' }}>
+                <p><strong>Title:</strong> {lastScheduledMeet.title}</p>
+                <p><strong>Type:</strong> <span style={{ textTransform: 'capitalize' }}>{lastScheduledMeet.meetingType}</span> ({lastScheduledMeet.meetingType === 'private' ? lastScheduledMeet.recurrence : 'one-time'})</p>
+                <p><strong>Date & Time:</strong> {new Date(lastScheduledMeet.dateTime).toLocaleString()}</p>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem', borderBottom: '1px solid var(--color-border)' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Meeting ID:</span>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{lastScheduledMeet.id}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem', borderBottom: '1px solid var(--color-border)' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Passcode:</span>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{lastScheduledMeet.password}</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', padding: '0.5rem' }}>
+                  <span style={{ color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Room Join Link:</span>
+                  <span style={{ fontFamily: 'monospace', fontSize: '0.8rem', wordBreak: 'break-all', padding: '0.35rem', backgroundColor: '#f1f5f9', borderRadius: '4px' }}>
+                    {`http://localhost:3000/join/${lastScheduledMeet.id}`}
+                  </span>
+                </div>
+              </div>
+
+              {lastScheduledMeet.meetingType === 'private' ? (
+                <p style={{ color: '#2563eb' }}>📨 Invitation emails have been sent to: <strong>{lastScheduledMeet.invitedEmails?.join(', ')}</strong></p>
+              ) : (
+                <p style={{ color: '#16a34a' }}>⚠️ This is a public one-time link. It will automatically expire after the meeting's <strong>{lastScheduledMeet.duration} minutes</strong> duration frame.</p>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button 
+                className="btn btn-primary w-full 3d-button" 
+                onClick={() => {
+                  setShowPasscodeAlert(false);
+                  setLastScheduledMeet(null);
+                }}
+              >
+                Close & Return
               </button>
             </div>
           </div>
@@ -2904,6 +4086,9 @@ export default function App() {
 
       {/* Hidden Video element for webcam streaming */}
       <video ref={hiddenVideoRef} style={{ display: 'none' }} playsInline muted />
+
+      {/* Render Authentication Modal if needed */}
+      {renderAuthModal()}
 
     </div>
   );
