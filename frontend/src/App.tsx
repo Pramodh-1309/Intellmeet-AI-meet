@@ -41,6 +41,7 @@ interface ChatMessage {
   text: string;
   time: string;
   avatarLogoIndex?: number;
+  recipient?: string;
 }
 
 interface MeetingHistory {
@@ -60,6 +61,8 @@ interface RecordingItem {
   date: string;
   url: string;
   duration: string;
+  expiresAt?: string;
+  isArchived?: boolean;
 }
 
 interface ScheduledMeeting {
@@ -211,6 +214,19 @@ export default function App() {
   const [isRegisterMode, setIsRegisterMode] = useState<boolean>(false);
   const [username, setUsername] = useState<string>('');
 
+  const [captchaCode, setCaptchaCode] = useState<string>('');
+  const [captchaInput, setCaptchaInput] = useState<string>('');
+
+  const generateCaptcha = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    for (let i = 0; i < 5; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setCaptchaCode(code);
+    setCaptchaInput('');
+  };
+
   // Position choices
   const [position, setPosition] = useState<string>('Student');
   const [customPosition, setCustomPosition] = useState<string>('');
@@ -256,6 +272,9 @@ export default function App() {
   const [prefMirrorVideo, setPrefMirrorVideo] = useState<boolean>(() => localStorage.getItem('pref_mirror_video') !== 'false');
   const [prefShowNames, setPrefShowNames] = useState<boolean>(() => localStorage.getItem('pref_show_names') !== 'false');
   const [prefNoiseSuppress, setPrefNoiseSuppress] = useState<boolean>(() => localStorage.getItem('pref_noise_suppress') === 'true');
+  const [prefHistoryVisibility, setPrefHistoryVisibility] = useState<string>(() => localStorage.getItem('pref_history_visibility') || 'All Time');
+  const [prefDownloadQuality, setPrefDownloadQuality] = useState<string>(() => localStorage.getItem('pref_download_quality') || '720p (HD)');
+  const [prefLowBandwidth, setPrefLowBandwidth] = useState<boolean>(() => localStorage.getItem('pref_low_bandwidth') === 'true');
 
   const webcamVideoRef = useRef<HTMLVideoElement | null>(null);
   const webcamStreamRef = useRef<MediaStream | null>(null);
@@ -311,13 +330,7 @@ export default function App() {
     onConfirm: () => {}
   });
 
-  // OTP Verification States
-  const [isOtpMode, setIsOtpMode] = useState<boolean>(false);
-  const [otpInput, setOtpInput] = useState<string>('');
-  const [generatedOtp, setGeneratedOtp] = useState<string>('');
-  const [otpTimer, setOtpTimer] = useState<number>(600); // 10 minutes in seconds
-  const [otpError, setOtpError] = useState<string>('');
-  const [resendCooldown, setResendCooldown] = useState<number>(0);
+
 
   // Supabase Configuration UI
   const [showSupaConfig, setShowSupaConfig] = useState<boolean>(false);
@@ -327,93 +340,7 @@ export default function App() {
   // Custom Participant Avatar Index (F-01 addition)
   const [selectedAvatarIdx, setSelectedAvatarIdx] = useState<number>(0);
 
-  // SMTP Server Configuration states
-  const [smtpHost, setSmtpHost] = useState<string>(() => localStorage.getItem('intellmeet_smtp_host') || '');
-  const [smtpPort, setSmtpPort] = useState<string>(() => localStorage.getItem('intellmeet_smtp_port') || '587');
-  const [smtpUser, setSmtpUser] = useState<string>(() => localStorage.getItem('intellmeet_smtp_user') || '');
-  const [smtpPass, setSmtpPass] = useState<string>(() => localStorage.getItem('intellmeet_smtp_pass') || '');
-  const [smtpSender, setSmtpSender] = useState<string>(() => localStorage.getItem('intellmeet_smtp_sender') || '"IntellMeet Workspace" <no-reply@intellmeet.com>');
-  const [etherealPreviewUrl, setEtherealPreviewUrl] = useState<string | null>(null);
 
-  const saveSmtpSettings = () => {
-    localStorage.setItem('intellmeet_smtp_host', smtpHost);
-    localStorage.setItem('intellmeet_smtp_port', smtpPort);
-    localStorage.setItem('intellmeet_smtp_user', smtpUser);
-    localStorage.setItem('intellmeet_smtp_pass', smtpPass);
-    localStorage.setItem('intellmeet_smtp_sender', smtpSender);
-    alert('SMTP Mail Server Settings saved successfully!');
-  };
-
-  const testSendEmail = async () => {
-    if (!smtpHost || !smtpUser || !smtpPass) {
-      alert('Please fill out SMTP Host, Username, and Password first.');
-      return;
-    }
-    const targetEmail = prompt('Enter recipient email address to send a test message:', email || 'user@example.com');
-    if (!targetEmail) return;
-
-    try {
-      const resp = await fetch('/api/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          toEmail: targetEmail.toLowerCase().trim(),
-          otpCode: '123456',
-          smtpSettings: {
-            host: smtpHost,
-            port: smtpPort,
-            user: smtpUser,
-            pass: smtpPass,
-            from: smtpSender
-          }
-        })
-      });
-      const data = await resp.json();
-      if (data.success) {
-        alert('Test email sent successfully! Please check your inbox.');
-      } else {
-        alert('Failed to send test email: ' + data.message);
-      }
-    } catch (e: any) {
-      alert('Network error sending test email: ' + e.message);
-    }
-  };
-
-  const sendOtpEmailLocal = async (targetEmail: string, otpCode: string) => {
-    const smtpSettingsObj = smtpHost ? {
-      host: smtpHost,
-      port: smtpPort,
-      user: smtpUser,
-      pass: smtpPass,
-      from: smtpSender
-    } : undefined;
-
-    try {
-      const resp = await fetch('/api/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          toEmail: targetEmail.toLowerCase().trim(),
-          otpCode,
-          smtpSettings: smtpSettingsObj
-        })
-      });
-      const data = await resp.json();
-      if (data.success) {
-        console.log(`[SMTP] OTP email sent successfully to ${targetEmail}.`);
-        if (data.previewUrl) {
-          setEtherealPreviewUrl(data.previewUrl);
-          console.log(`[ETHEREAL MOCK MAIL BOX] View sent message: ${data.previewUrl}`);
-        } else {
-          setEtherealPreviewUrl(null);
-        }
-      } else {
-        console.error('SMTP OTP Delivery failed:', data.message);
-      }
-    } catch (e: any) {
-      console.error('Network error requesting OTP mail delivery:', e.message);
-    }
-  };
 
   // Navigation State
   const [currentTab, setCurrentTab] = useState<string>('dashboard'); // 'dashboard', 'meeting', 'kanban', 'analytics', 'history', 'recordings'
@@ -422,6 +349,12 @@ export default function App() {
   useEffect(() => {
     setMobileSidebarOpen(false);
   }, [currentTab]);
+
+  useEffect(() => {
+    if (showAuthModal && !isRegisterMode) {
+      generateCaptcha();
+    }
+  }, [showAuthModal, isRegisterMode]);
 
   // Meeting Room State
   const [inActiveMeeting, setInActiveMeeting] = useState<boolean>(false);
@@ -486,6 +419,8 @@ export default function App() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [sharedNotes, setSharedNotes] = useState<string>('');
   const [chatInput, setChatInput] = useState<string>('');
+  const [chatTarget, setChatTarget] = useState<string>('Everyone');
+  const [pinnedChatIds, setPinnedChatIds] = useState<string[]>([]);
 
   // Kanban Board State
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -517,6 +452,8 @@ export default function App() {
   // Refs for drawing simulated video canvas streams
   const myVideoRef = useRef<HTMLCanvasElement | null>(null);
   const hiddenVideoRef = useRef<HTMLVideoElement | null>(null);
+  const hiddenScreenVideoRef = useRef<HTMLVideoElement | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const recognitionRef = useRef<any>(null);
@@ -890,6 +827,15 @@ export default function App() {
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
+
+        if (prefLowBandwidth) {
+          // Throttle updates to ~2 frames per second to save bandwidth and processor workload
+          if (frame % 30 !== 0 && frame > 0) {
+            frame++;
+            animId = requestAnimationFrame(renderCanvas);
+            return;
+          }
+        }
 
         const w = canvas.width;
         const h = canvas.height;
@@ -1340,47 +1286,20 @@ export default function App() {
     loadData();
   }, [isAuthenticated]);
 
-  // OTP Countdown Timer Tick
-  useEffect(() => {
-    if (!isOtpMode) return;
 
-    const timer = setInterval(() => {
-      setOtpTimer(prev => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [isOtpMode]);
-
-  // Resend cooldown timer tick
-  useEffect(() => {
-    if (resendCooldown <= 0) return;
-
-    const timer = setInterval(() => {
-      setResendCooldown(prev => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [resendCooldown]);
 
   // Handle Login
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
 
+    if (captchaInput.toUpperCase().trim() !== captchaCode) {
+      setAuthError('Captcha verification failed. Please check the code and try again.');
+      generateCaptcha();
+      return;
+    }
+
     if (isSupabaseConfigured() && supabase) {
-      // 1. First verify email/password
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
@@ -1388,23 +1307,17 @@ export default function App() {
 
       if (error) {
         setAuthError(error.message);
+        generateCaptcha();
         return;
       }
 
       if (data?.user) {
-        // Log out the temporary session immediately
-        await supabase.auth.signOut();
-        
-        // 2. Trigger email OTP
-        const { error: otpErr } = await supabase.auth.signInWithOtp({ email });
-        if (otpErr) {
-          setAuthError('Password verified, but failed to send OTP: ' + otpErr.message);
-        } else {
-          setIsOtpMode(true);
-          setOtpTimer(600);
-          setOtpInput('');
-          setResendCooldown(60);
-        }
+        setIsAuthenticated(true);
+        setShowAuthModal(false);
+        const name = data.user.user_metadata?.name || 'User';
+        setUsername(name);
+        setPosition(data.user.user_metadata?.position || 'Student');
+        addSessionLog(name, 'login');
       }
     } else {
       // Local Mode Login
@@ -1413,16 +1326,16 @@ export default function App() {
       const matchedUser = localUsers.find((u: any) => u.email.toLowerCase().trim() === email.toLowerCase().trim() && u.password === password);
 
       if (matchedUser) {
-        const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-        setGeneratedOtp(otpCode);
-        setIsOtpMode(true);
-        setOtpTimer(600);
-        setOtpInput('');
-        setResendCooldown(60);
-        console.log(`[LOCAL DEV MODE] Generated Sign In OTP for ${email}: ${otpCode}`);
-        sendOtpEmailLocal(matchedUser.email, otpCode);
+        const sessionObj = { email: matchedUser.email, name: matchedUser.name, position: matchedUser.position };
+        localStorage.setItem('intellmeet_session', JSON.stringify(sessionObj));
+        setIsAuthenticated(true);
+        setUsername(matchedUser.name);
+        setPosition(matchedUser.position);
+        setShowAuthModal(false);
+        addSessionLog(matchedUser.name, 'login');
       } else {
         setAuthError('Invalid credentials. Check email/password or sign up.');
+        generateCaptcha();
       }
     }
   };
@@ -1497,78 +1410,7 @@ export default function App() {
     }
   };
 
-  // Handle Verify OTP
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setOtpError('');
 
-    if (otpTimer === 0) {
-      setOtpError('OTP has expired (10 minutes limit exceeded). Please click Resend OTP.');
-      return;
-    }
-
-    if (isSupabaseConfigured() && supabase) {
-      const { data, error } = await supabase.auth.verifyOtp({
-        email,
-        token: otpInput,
-        type: 'email'
-      });
-
-      if (error) {
-        setOtpError(error.message);
-      } else if (data?.user) {
-        setIsAuthenticated(true);
-        setIsOtpMode(false);
-        setShowAuthModal(false);
-        const name = data.user.user_metadata?.name || 'User';
-        setUsername(name);
-        setPosition(data.user.user_metadata?.position || 'Student');
-        addSessionLog(name, 'login');
-      }
-    } else {
-      if (otpInput === generatedOtp) {
-        const usersRaw = localStorage.getItem('intellmeet_local_users') || '[]';
-        const localUsers = JSON.parse(usersRaw);
-        const matchedUser = localUsers.find((u: any) => u.email.toLowerCase().trim() === email.toLowerCase().trim());
-
-        if (matchedUser) {
-          const sessionObj = { email: matchedUser.email, name: matchedUser.name, position: matchedUser.position };
-          localStorage.setItem('intellmeet_session', JSON.stringify(sessionObj));
-
-          setIsAuthenticated(true);
-          setUsername(matchedUser.name);
-          setPosition(matchedUser.position);
-          setIsOtpMode(false);
-          setShowAuthModal(false);
-          addSessionLog(matchedUser.name, 'login');
-        } else {
-          setOtpError('User matching credentials not found in local sandbox.');
-        }
-      } else {
-        setOtpError('Invalid OTP code. Please try again.');
-      }
-    }
-  };
-
-  // Handle Resend OTP
-  const handleResendOtp = async () => {
-    setOtpError('');
-    setOtpInput('');
-    setOtpTimer(600);
-    setResendCooldown(60);
-
-    if (isSupabaseConfigured() && supabase) {
-      const { error } = await supabase.auth.signInWithOtp({ email });
-      if (error) {
-        setOtpError('Failed to resend validation email: ' + error.message);
-      }
-    } else {
-      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-      setGeneratedOtp(otpCode);
-      console.log(`[LOCAL DEV MODE] Resent Sign In OTP for ${email}: ${otpCode}`);
-      sendOtpEmailLocal(email, otpCode);
-    }
-  };
 
   // Handle Logout
   const handleLogout = async () => {
@@ -1788,7 +1630,8 @@ export default function App() {
       sender: username,
       text: chatInput.trim(),
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      avatarLogoIndex: selectedAvatarIdx
+      avatarLogoIndex: selectedAvatarIdx,
+      recipient: chatTarget
     };
     setChatMessages(prev => [...prev, userMsg]);
     setChatInput('');
@@ -1863,6 +1706,11 @@ export default function App() {
         setMeetingTitle(match.title);
         setMeetingId(match.id);
         setActiveMeetingPasscode(match.password || '');
+      } else {
+        generatedId = targetId;
+        generatedPasscode = 'PASS-0000';
+        setMeetingId(targetId);
+        setActiveMeetingPasscode(generatedPasscode);
       }
 
       if (isSupabaseConfigured() && supabase) {
@@ -1924,41 +1772,81 @@ export default function App() {
       ctx.fillStyle = '#0f172a';
       ctx.fillRect(0, 0, 640, 360);
 
-      // Define grid coordinates for a 4-quadrant layout
-      const positions = [
-        { x: 0, y: 0 },
-        { x: 320, y: 0 },
-        { x: 0, y: 180 },
-        { x: 320, y: 180 }
-      ];
-
-      // 1. Draw local user at Quadrant 0 (0, 0)
-      if (myVideoRef.current && !isCamOff) {
-        ctx.drawImage(myVideoRef.current, 0, 0, 320, 180);
-      } else {
-        ctx.fillStyle = '#1e293b';
-        ctx.fillRect(0, 0, 320, 180);
-        ctx.fillStyle = '#94a3b8';
-        ctx.font = '12px Poppins';
-        ctx.textAlign = 'center';
-        ctx.fillText(`${username || 'You'} (Camera Off)`, 160, 90);
-      }
-
-      // 2. Draw remote participants dynamically up to 3 remote slots
-      meetingParticipants.slice(0, 3).forEach((p, idx) => {
-        const { x, y } = positions[idx + 1];
-        const canvas = remoteCanvasRefs.current[p.userId];
-        if (canvas && !p.isCamOff) {
-          ctx.drawImage(canvas, x, y, 320, 180);
-        } else {
-          ctx.fillStyle = '#1e293b';
-          ctx.fillRect(x, y, 320, 180);
-          ctx.fillStyle = '#94a3b8';
-          ctx.font = '12px Poppins';
-          ctx.textAlign = 'center';
-          ctx.fillText(`${p.username || 'Participant'} (Camera Off)`, x + 160, y + 90);
+      if (isScreenSharing) {
+        // 1. Draw screen share stream to fill the entire canvas
+        if (hiddenScreenVideoRef.current) {
+          ctx.drawImage(hiddenScreenVideoRef.current, 0, 0, 640, 360);
         }
-      });
+        
+        // 2. Draw active participants in a PIP overlay corner (e.g. bottom-right)
+        if (meetingParticipants.length > 0) {
+          const firstP = meetingParticipants[0];
+          const canvas = remoteCanvasRefs.current[firstP.userId];
+          if (canvas && !firstP.isCamOff) {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+            ctx.fillRect(495, 265, 130, 80);
+            ctx.drawImage(canvas, 500, 270, 120, 70);
+            
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 8px Poppins';
+            ctx.textAlign = 'right';
+            ctx.fillText(firstP.username, 615, 335);
+          }
+        }
+      } else {
+        // No screen sharing: decide layout based on participant count
+        const totalPeople = 1 + meetingParticipants.length;
+        
+        if (totalPeople === 1) {
+          // Solo Host: host fills the entire canvas!
+          if (hiddenVideoRef.current && !isCamOff) {
+            ctx.drawImage(hiddenVideoRef.current, 0, 0, 640, 360);
+          } else {
+            ctx.fillStyle = '#1e293b';
+            ctx.fillRect(0, 0, 640, 360);
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '16px Poppins';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${username || 'You'} (Camera Off)`, 320, 180);
+          }
+        } else {
+          // Multi-person grid: 4-quadrant layout
+          const positions = [
+            { x: 0, y: 0 },
+            { x: 320, y: 0 },
+            { x: 0, y: 180 },
+            { x: 320, y: 180 }
+          ];
+
+          // Draw host at quadrant 0
+          if (hiddenVideoRef.current && !isCamOff) {
+            ctx.drawImage(hiddenVideoRef.current, 0, 0, 320, 180);
+          } else {
+            ctx.fillStyle = '#1e293b';
+            ctx.fillRect(0, 0, 320, 180);
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '12px Poppins';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${username || 'You'} (Camera Off)`, 160, 90);
+          }
+
+          // Draw remote participants
+          meetingParticipants.slice(0, 3).forEach((p, idx) => {
+            const { x, y } = positions[idx + 1];
+            const canvas = remoteCanvasRefs.current[p.userId];
+            if (canvas && !p.isCamOff) {
+              ctx.drawImage(canvas, x, y, 320, 180);
+            } else {
+              ctx.fillStyle = '#1e293b';
+              ctx.fillRect(x, y, 320, 180);
+              ctx.fillStyle = '#94a3b8';
+              ctx.font = '12px Poppins';
+              ctx.textAlign = 'center';
+              ctx.fillText(`${p.username || 'Participant'} (Camera Off)`, x + 160, y + 90);
+            }
+          });
+        }
+      }
 
       // Draw Coral recording dot
       ctx.fillStyle = '#F95335';
@@ -1999,7 +1887,9 @@ export default function App() {
           title: meetingTitle + ' Session',
           date: new Date().toISOString().split('T')[0],
           url: videoUrl, // temporarily saved in browser session memory
-          duration: durationString
+          duration: durationString,
+          expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+          isArchived: false
         };
 
         setRecordings(prev => [newRec, ...prev]);
@@ -2030,7 +1920,9 @@ export default function App() {
         title: meetingTitle + ' (Simulated Session)',
         date: new Date().toISOString().split('T')[0],
         url: 'https://assets.mixkit.co/videos/preview/mixkit-curious-cat-watching-tv-42284-large.mp4', // premium stock video fallback
-        duration: durationString
+        duration: durationString,
+        expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+        isArchived: false
       };
       setRecordings(prev => [newRec, ...prev]);
     }
@@ -2055,7 +1947,9 @@ export default function App() {
         title: meetingTitle + ' Session',
         date: new Date().toISOString().split('T')[0],
         url: 'https://assets.mixkit.co/videos/preview/mixkit-curious-cat-watching-tv-42284-large.mp4',
-        duration: durationString
+        duration: durationString,
+        expiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+        isArchived: false
       };
       setRecordings(prev => [newRec, ...prev]);
     }
@@ -2115,8 +2009,84 @@ export default function App() {
       });
     }
 
+    // Clean up meeting state in scheduled list (mark expired/ended)
+    if (meetingId) {
+      const targetId = meetingId;
+      if (isSupabaseConfigured() && supabase) {
+        try {
+          const { error: updateErr } = await supabase
+            .from('scheduled_meetings')
+            .update({ is_host_joined: false, is_expired: true })
+            .eq('id', targetId);
+          if (updateErr) {
+            console.error('Error marking meeting expired in Supabase:', updateErr);
+          }
+        } catch (err) {
+          console.error('Network error marking meeting expired:', err);
+        }
+      }
+      
+      // Update local state and localStorage
+      setScheduledMeetings(prev => {
+        const updated = prev.map(m => (m.id === targetId || m.id === meetingId) ? { ...m, isHostJoined: false, isExpired: true } : m);
+        localStorage.setItem('intellmeet_scheduled_v2', JSON.stringify(updated));
+        return updated;
+      });
+    }
+
+    if (isScreenSharing) {
+      stopScreenShare();
+    }
+
     setInActiveMeeting(false);
     setCurrentTab('dashboard');
+  };
+
+  const startScreenShare = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          displaySurface: "monitor",
+        },
+        audio: true,
+        selfBrowserSurface: "exclude"
+      } as any);
+      screenStreamRef.current = stream;
+      
+      if (hiddenScreenVideoRef.current) {
+        hiddenScreenVideoRef.current.srcObject = stream;
+        hiddenScreenVideoRef.current.play().catch(err => console.log("Screen video playback error:", err));
+      }
+
+      setIsScreenSharing(true);
+
+      // Listen for when the user clicks browser's native "Stop Sharing" button
+      stream.getVideoTracks()[0].onended = () => {
+        stopScreenShare();
+      };
+    } catch (err) {
+      console.error("Error starting screen share:", err);
+      setIsScreenSharing(false);
+    }
+  };
+
+  const stopScreenShare = () => {
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach(track => track.stop());
+      screenStreamRef.current = null;
+    }
+    if (hiddenScreenVideoRef.current) {
+      hiddenScreenVideoRef.current.srcObject = null;
+    }
+    setIsScreenSharing(false);
+  };
+
+  const toggleScreenShare = () => {
+    if (isScreenSharing) {
+      stopScreenShare();
+    } else {
+      startScreenShare();
+    }
   };
 
 
@@ -2134,14 +2104,33 @@ export default function App() {
     const render = () => {
       frame++;
       
-      // Draw User Camera feed (myVideoRef)
-      if (myVideoRef.current && !isCamOff) {
+      // Draw User Camera/Screen feed (myVideoRef)
+      if (myVideoRef.current) {
         const ctx = myVideoRef.current.getContext('2d');
         if (ctx) {
           const w = myVideoRef.current.width;
           const h = myVideoRef.current.height;
           
-          if (hiddenVideoRef.current && hiddenVideoRef.current.readyState >= 2) {
+          let drewSource = false;
+          
+          if (isScreenSharing && hiddenScreenVideoRef.current && hiddenScreenVideoRef.current.readyState >= 2) {
+            const video = hiddenScreenVideoRef.current;
+            const vw = video.videoWidth;
+            const vh = video.videoHeight;
+            const videoRatio = vw / vh;
+            const canvasRatio = w / h;
+            let sx = 0, sy = 0, sw = vw, sh = vh;
+            
+            if (videoRatio > canvasRatio) {
+              sw = vh * canvasRatio;
+              sx = (vw - sw) / 2;
+            } else {
+              sh = vw / canvasRatio;
+              sy = (vh - sh) / 2;
+            }
+            ctx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
+            drewSource = true;
+          } else if (!isCamOff && hiddenVideoRef.current && hiddenVideoRef.current.readyState >= 2) {
             const video = hiddenVideoRef.current;
             const vw = video.videoWidth;
             const vh = video.videoHeight;
@@ -2157,7 +2146,10 @@ export default function App() {
               sy = (vh - sh) / 2;
             }
             ctx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
-          } else {
+            drewSource = true;
+          }
+          
+          if (!drewSource) {
             // Clear
             ctx.fillStyle = '#0f172a';
             ctx.fillRect(0, 0, w, h);
@@ -2219,8 +2211,8 @@ export default function App() {
     return diff <= fiveMinutesInMs;
   };
 
-  const isMeetingExpired = (_meet: ScheduledMeeting) => {
-    return false;
+  const isMeetingExpired = (meet: ScheduledMeeting) => {
+    return meet.isExpired;
   };
 
   const handleScheduleMeeting = async (title: string, dateTimeStr: string) => {
@@ -2327,6 +2319,32 @@ export default function App() {
     setSchedRecurrence('none');
   };
 
+  const handleDeleteScheduledMeeting = async (meetId: string) => {
+    if (!window.confirm("Are you sure you want to delete/cancel this scheduled meeting?")) return;
+
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { error } = await supabase
+          .from('scheduled_meetings')
+          .delete()
+          .eq('id', meetId);
+
+        if (error) {
+          alert('Error deleting meeting from database: ' + error.message);
+          return;
+        }
+      } catch (err: any) {
+        console.error('Network error deleting meeting:', err);
+      }
+    }
+
+    setScheduledMeetings(prev => {
+      const updated = prev.filter(m => m.id !== meetId);
+      localStorage.setItem('intellmeet_scheduled_v2', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   const handleAcceptInvitation = async (meetId: string) => {
     const userEmail = email.trim().toLowerCase() || 'admin@zidio.com';
     
@@ -2407,15 +2425,16 @@ export default function App() {
   };
 
   const getActiveMeetings = () => {
-    const list: Array<{ id: string; title: string; host: string; isScheduled: boolean }> = [];
+    const list: Array<{ id: string; title: string; host: string; password?: string; isScheduled: boolean }> = [];
     
     // Add started scheduled meetings
     scheduledMeetings.forEach(m => {
-      if (m.isHostJoined) {
+      if (m.isHostJoined && !m.isExpired) {
         list.push({
           id: m.id,
           title: m.title,
           host: m.host,
+          password: m.password,
           isScheduled: true
         });
       }
@@ -2423,12 +2442,13 @@ export default function App() {
 
     // Add current active room if it's an instant meeting (i.e. title doesn't match any active scheduled meeting)
     if (inActiveMeeting) {
-      const isRepresented = list.some(m => m.title === meetingTitle);
+      const isRepresented = list.some(m => m.id === meetingId || m.title === meetingTitle);
       if (!isRepresented) {
         list.push({
-          id: 'INSTANT-ROOM',
+          id: meetingId || 'INSTANT-ROOM',
           title: meetingTitle,
           host: username || 'User',
+          password: activeMeetingPasscode,
           isScheduled: false
         });
       }
@@ -2440,15 +2460,25 @@ export default function App() {
   const handleOpenPlayback = (rec: RecordingItem) => {
     setPlaybackUrl(rec.url);
     setPlaybackTitle(rec.title);
+    const normalized = prefDownloadQuality.split(' ')[0];
+    setDownloadQuality(normalized || '720p');
   };
 
   const handleDeleteRecording = (recId: string) => {
     setRecordings(prev => prev.filter(r => r.id !== recId));
   };
 
+  const handleToggleArchiveRecording = (recId: string) => {
+    setRecordings(prev => prev.map(r => {
+      if (r.id === recId) {
+        return { ...r, isArchived: !r.isArchived };
+      }
+      return r;
+    }));
+  };
+
   const renderAuthModal = () => {
     if (!showAuthModal) return null;
-    const formattedTimer = `${Math.floor(otpTimer / 60).toString().padStart(2, '0')}:${(otpTimer % 60).toString().padStart(2, '0')}`;
 
     return (
       <div className="modal-overlay" style={{ zIndex: 2000 }}>
@@ -2494,184 +2524,146 @@ export default function App() {
               Local Sandbox Mode
             </div>
           )}
-          {isOtpMode ? (
-            <div>
-              <h2 className="auth-title">Verify Registration</h2>
-              <p className="auth-subtitle" style={{ marginBottom: '1.5rem' }}>
-                We've sent a 6-digit confirmation code to <b>{email}</b>. Please enter it below.
-              </p>
 
-              {/* Developer OTP Helper Banner */}
-              {!isSupabaseConfigured() && (
-                <div style={{
-                  backgroundColor: '#fffbeb',
-                  border: '1px dashed #f59e0b',
-                  borderRadius: '8px',
-                  padding: '0.75rem',
-                  fontSize: '0.825rem',
-                  color: '#b45309',
-                  textAlign: 'center',
-                  marginBottom: '1.25rem'
-                }}>
-                  🔑 <b>Dev Mode:</b> Enter OTP code <b>{generatedOtp}</b> to proceed.
-                </div>
-              )}
+          <div>
+            <h2 className="auth-title">{isRegisterMode ? 'Create Account' : 'Sign In'}</h2>
+            <p className="auth-subtitle">AI-Powered Enterprise Collaboration</p>
 
-              {/* Ethereal Mock Mailbox Banner */}
-              {!isSupabaseConfigured() && etherealPreviewUrl && (
-                <div style={{
-                  backgroundColor: '#f0fdf4',
-                  border: '1px dashed #22c55e',
-                  borderRadius: '8px',
-                  padding: '0.75rem',
-                  fontSize: '0.825rem',
-                  color: '#15803d',
-                  textAlign: 'center',
-                  marginBottom: '1.25rem'
-                }}>
-                  📬 <b>Ethereal Mock Mailbox:</b> A test message was captured. <a href={etherealPreviewUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline', fontWeight: 600 }}>Click here to view your inbox</a>.
-                </div>
-              )}
+            <form onSubmit={isRegisterMode ? handleRegister : handleLogin}>
+              {isRegisterMode && (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">Full Name</label>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      value={username} 
+                      onChange={(e) => setUsername(e.target.value)} 
+                      placeholder="Enter full name"
+                      required 
+                    />
+                  </div>
 
-              <div className="otp-timer-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Code Expires In:</span>
-                <div className={`otp-timer ${otpTimer === 0 ? 'expired' : ''}`}>
-                  {formattedTimer}
-                </div>
-              </div>
+                  <div className="form-group">
+                    <label className="form-label">Position / Profession</label>
+                    <select 
+                      className="form-input" 
+                      value={position} 
+                      onChange={(e) => setPosition(e.target.value)}
+                      required
+                    >
+                      <option value="Student">Student</option>
+                      <option value="Working Professional">Working Professional</option>
+                      <option value="Product Manager">Product Manager</option>
+                      <option value="Software Engineer">Software Engineer</option>
+                      <option value="System Administrator">System Administrator</option>
+                      <option value="Researcher / Academic">Researcher / Academic</option>
+                      <option value="Other">Other (Custom profession)</option>
+                    </select>
+                  </div>
 
-              <form onSubmit={handleVerifyOtp}>
-                <div className="form-group">
-                  <label className="form-label" style={{ textAlign: 'center' }}>6-Digit Verification OTP</label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
-                    value={otpInput} 
-                    onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    placeholder="Enter 6-digit code"
-                    style={{ textAlign: 'center', letterSpacing: '0.25em', fontSize: '1.125rem', fontWeight: 600 }}
-                    required 
-                  />
-                </div>
-
-                {otpError && <p style={{color: 'var(--color-danger)', fontSize: '0.825rem', marginBottom: '1rem', textAlign: 'center'}}>{otpError}</p>}
-
-                <button type="submit" className="btn btn-primary w-full mt-4" disabled={otpTimer === 0}>
-                  Verify & Log In
-                </button>
-              </form>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.825rem', marginTop: '1.5rem' }}>
-                <span className="auth-toggle-link" onClick={() => setIsOtpMode(false)}>
-                  Back to signup
-                </span>
-                <div>
-                  {resendCooldown > 0 ? (
-                    <span style={{ color: 'var(--text-muted)' }}>Resend code in {resendCooldown}s</span>
-                  ) : (
-                    <button className="resend-btn" onClick={handleResendOtp}>
-                      Resend OTP
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div>
-              <h2 className="auth-title">{isRegisterMode ? 'Create Account' : 'Sign In'}</h2>
-              <p className="auth-subtitle">AI-Powered Enterprise Collaboration</p>
-
-              <form onSubmit={isRegisterMode ? handleRegister : handleLogin}>
-                {isRegisterMode && (
-                  <>
-                    <div className="form-group">
-                      <label className="form-label">Full Name</label>
+                  {position === 'Other' && (
+                    <div className="form-group animate-fade-in">
+                      <label className="form-label">Specify Position</label>
                       <input 
                         type="text" 
                         className="form-input" 
-                        value={username} 
-                        onChange={(e) => setUsername(e.target.value)} 
-                        placeholder="Enter full name"
+                        value={customPosition} 
+                        onChange={(e) => setCustomPosition(e.target.value)} 
+                        placeholder="e.g. Product Designer" 
                         required 
                       />
                     </div>
+                  )}
+                </>
+              )}
+              
+              <div className="form-group">
+                <label className="form-label">Email Address</label>
+                <input 
+                  type="email" 
+                  className="form-input" 
+                  value={email} 
+                  onChange={(e) => setEmail(e.target.value)} 
+                  placeholder="Enter email address"
+                  required 
+                />
+              </div>
 
-                    <div className="form-group">
-                      <label className="form-label">Position / Profession</label>
-                      <select 
-                        className="form-input" 
-                        value={position} 
-                        onChange={(e) => setPosition(e.target.value)}
-                        required
-                      >
-                        <option value="Student">Student</option>
-                        <option value="Working Professional">Working Professional</option>
-                        <option value="Product Manager">Product Manager</option>
-                        <option value="Software Engineer">Software Engineer</option>
-                        <option value="System Administrator">System Administrator</option>
-                        <option value="Researcher / Academic">Researcher / Academic</option>
-                        <option value="Other">Other (Custom profession)</option>
-                      </select>
+              <div className="form-group">
+                <label className="form-label">Password</label>
+                <input 
+                  type="password" 
+                  className="form-input" 
+                  value={password} 
+                  onChange={(e) => setPassword(e.target.value)} 
+                  placeholder="Enter password"
+                  required 
+                />
+              </div>
+
+              {!isRegisterMode && (
+                <div className="form-group" style={{ marginTop: '1.25rem' }}>
+                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Security Verification (Confirm you are human)</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--color-primary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }} onClick={generateCaptcha}>
+                      🔄 Refresh
+                    </span>
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginBottom: '0.75rem' }}>
+                    {/* Monospace Styled Captcha Code Box */}
+                    <div style={{
+                      flex: '1',
+                      height: '42px',
+                      backgroundColor: 'var(--bg-secondary)',
+                      borderRadius: '8px',
+                      border: '1px solid var(--color-border)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      letterSpacing: '0.4em',
+                      fontFamily: 'monospace',
+                      fontWeight: 700,
+                      fontSize: '1.25rem',
+                      color: 'var(--color-primary)',
+                      backgroundImage: 'linear-gradient(45deg, transparent 45%, rgba(0,0,0,0.06) 48%, rgba(0,0,0,0.06) 52%, transparent 55%), linear-gradient(-45deg, transparent 45%, rgba(0,0,0,0.06) 48%, rgba(0,0,0,0.06) 52%, transparent 55%)',
+                      backgroundSize: '15px 15px',
+                      userSelect: 'none',
+                      boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.05)'
+                    }}>
+                      {captchaCode}
                     </div>
-
-                    {position === 'Other' && (
-                      <div className="form-group animate-fade-in">
-                        <label className="form-label">Specify Position</label>
-                        <input 
-                          type="text" 
-                          className="form-input" 
-                          value={customPosition} 
-                          onChange={(e) => setCustomPosition(e.target.value)} 
-                          placeholder="e.g. Product Designer" 
-                          required 
-                        />
-                      </div>
-                    )}
-                  </>
-                )}
-                
-                <div className="form-group">
-                  <label className="form-label">Email Address</label>
-                  <input 
-                    type="email" 
-                    className="form-input" 
-                    value={email} 
-                    onChange={(e) => setEmail(e.target.value)} 
-                    placeholder="Enter email address"
-                    required 
-                  />
+                    {/* Captcha Input */}
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      style={{ flex: '1.2', margin: 0, textTransform: 'uppercase', textAlign: 'center', letterSpacing: '0.15em', fontWeight: 600 }}
+                      value={captchaInput} 
+                      onChange={(e) => setCaptchaInput(e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 5))} 
+                      placeholder="Enter code" 
+                      required 
+                    />
+                  </div>
                 </div>
+              )}
 
-                <div className="form-group">
-                  <label className="form-label">Password</label>
-                  <input 
-                    type="password" 
-                    className="form-input" 
-                    value={password} 
-                    onChange={(e) => setPassword(e.target.value)} 
-                    placeholder="Enter password"
-                    required 
-                  />
-                </div>
+              {authError && <p style={{color: 'var(--color-danger)', fontSize: '0.825rem', marginBottom: '1rem'}}>{authError}</p>}
+              
+              <button type="submit" className="btn btn-primary w-full mt-4">
+                {isRegisterMode ? 'Register & Verify' : 'Login to Workspace'}
+              </button>
+            </form>
 
-                {authError && <p style={{color: 'var(--color-danger)', fontSize: '0.825rem', marginBottom: '1rem'}}>{authError}</p>}
-                
-                <button type="submit" className="btn btn-primary w-full mt-4">
-                  {isRegisterMode ? 'Register & Verify' : 'Login to Workspace'}
-                </button>
-              </form>
-
-              <p className="auth-toggle">
-                {isRegisterMode ? 'Already have an account? ' : 'Need a workspace account? '}
-                <span className="auth-toggle-link" onClick={() => {
-                  setAuthError('');
-                  setIsRegisterMode(!isRegisterMode);
-                }}>
-                  {isRegisterMode ? 'Sign In' : 'Sign Up'}
-                </span>
-              </p>
-            </div>
-          )}
+            <p className="auth-toggle">
+              {isRegisterMode ? 'Already have an account? ' : 'Need a workspace account? '}
+              <span className="auth-toggle-link" onClick={() => {
+                setAuthError('');
+                setIsRegisterMode(!isRegisterMode);
+              }}>
+                {isRegisterMode ? 'Sign In' : 'Sign Up'}
+              </span>
+            </p>
+          </div>
         </div>
 
         {/* Supabase Key Settings Modal */}
@@ -2738,6 +2730,8 @@ export default function App() {
       </div>
     );
   };
+
+
 
   return (
     <div className="app-container">
@@ -3044,6 +3038,7 @@ export default function App() {
 
             {/* 📩 Pending Invitations Inbox (Private Meetings) */}
             {scheduledMeetings.filter(m => 
+              !m.isExpired &&
               m.meetingType === 'private' && 
               m.invitedEmails?.includes(email.trim().toLowerCase() || 'admin@zidio.com') && 
               m.responses?.[email.trim().toLowerCase() || 'admin@zidio.com'] === 'pending'
@@ -3052,11 +3047,12 @@ export default function App() {
                 <h3 className="card-title" style={{ color: 'var(--color-primary)' }}>📩 Pending Meeting Invitations</h3>
                 <div className="meeting-list">
                   {scheduledMeetings.filter(m => 
+                    !m.isExpired &&
                     m.meetingType === 'private' && 
                     m.invitedEmails?.includes(email.trim().toLowerCase() || 'admin@zidio.com') && 
                     m.responses?.[email.trim().toLowerCase() || 'admin@zidio.com'] === 'pending'
                   ).map(meet => (
-                    <div key={meet.id} className="meeting-item" style={{ backgroundColor: 'white' }}>
+                    <div key={meet.id} className="meeting-item" style={{ backgroundColor: 'var(--bg-primary)' }}>
                       <div className="meeting-info">
                         <div className="meeting-icon" style={{ backgroundColor: 'var(--color-primary)' }}>
                           <Users size={20} />
@@ -3085,11 +3081,11 @@ export default function App() {
             <div className="dashboard-card col-12 3d-effect mb-4">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h3 className="card-title" style={{ margin: 0 }}>📅 Scheduled Meetings</h3>
-                <span className="badge badge-primary">{scheduledMeetings.filter(m => !m.isHostJoined).length} Scheduled</span>
+                <span className="badge badge-primary">{scheduledMeetings.filter(m => !m.isHostJoined && !m.isExpired).length} Scheduled</span>
               </div>
               <div className="meeting-list">
-                {scheduledMeetings.filter(m => !m.isHostJoined).length > 0 ? (
-                  scheduledMeetings.filter(m => !m.isHostJoined).map(meet => {
+                {scheduledMeetings.filter(m => !m.isHostJoined && !m.isExpired).length > 0 ? (
+                  scheduledMeetings.filter(m => !m.isHostJoined && !m.isExpired).map(meet => {
                     const isEnabled = getButtonStatus(meet.dateTime);
                     const expired = isMeetingExpired(meet);
                     
@@ -3127,22 +3123,30 @@ export default function App() {
                           {expired ? (
                             <span className="badge badge-red font-semibold">EXPIRED</span>
                           ) : (
-                            <button 
-                              className={`btn 3d-button ${isEnabled ? 'btn-primary' : 'btn-secondary'}`}
-                              disabled={!isEnabled}
-                              onClick={() => {
-                                setMeetingTitle(meet.title);
-                                setMeetingId(meet.id);
-                                setActiveJoiningScheduledId(meet.id);
-                                setShowJoinSetupModal(true);
-                              }}
-                              style={{ 
-                                opacity: isEnabled ? 1 : 0.6,
-                                cursor: isEnabled ? 'pointer' : 'not-allowed'
-                              }}
-                            >
-                              Join Room
-                            </button>
+                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                              <button 
+                                className={`btn 3d-button ${isEnabled ? 'btn-primary' : 'btn-secondary'}`}
+                                disabled={!isEnabled}
+                                onClick={() => {
+                                  setMeetingTitle(meet.title);
+                                  setMeetingId(meet.id);
+                                  setActiveJoiningScheduledId(meet.id);
+                                  setShowJoinSetupModal(true);
+                                }}
+                                style={{ 
+                                  opacity: isEnabled ? 1 : 0.6,
+                                  cursor: isEnabled ? 'pointer' : 'not-allowed'
+                                }}
+                              >
+                                Join Room
+                              </button>
+                              <button 
+                                className="btn btn-danger 3d-button"
+                                onClick={() => handleDeleteScheduledMeeting(meet.id)}
+                              >
+                                Delete
+                              </button>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -3158,7 +3162,7 @@ export default function App() {
 
             <div className="dashboard-grid">
               {/* Active Meetings List */}
-              <div className="dashboard-card col-8 3d-effect">
+              <div className="dashboard-card col-12 3d-effect">
                 <h3 className="card-title">🚀 Active Meetings</h3>
                 <div className="meeting-list">
                   {getActiveMeetings().length > 0 ? (
@@ -3170,13 +3174,16 @@ export default function App() {
                           </div>
                           <div className="meeting-details">
                             <h4>{meet.title}</h4>
-                            <p>Host: {meet.host} • 3 participants active</p>
+                            <p>Host: {meet.host} • ID: <strong>{meet.id}</strong> {meet.password && `• Passcode: ${meet.password}`}</p>
                           </div>
                         </div>
                         <div>
                           <span className="badge badge-green mr-4">Live</span>
                           <button className="btn btn-primary 3d-button" onClick={() => {
                             setMeetingTitle(meet.title);
+                            setMeetingId(meet.id);
+                            setActiveMeetingPasscode(meet.password || '');
+                            setMeetingStartTime(Date.now());
                             setInActiveMeeting(true);
                             setCurrentTab('meeting');
                           }}>
@@ -3188,26 +3195,6 @@ export default function App() {
                   ) : (
                     <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
                       No active meetings right now. Start a scheduled meeting or click "Start Instant Meeting" above.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Quick AI Extraction Box */}
-              <div className="dashboard-card col-4 3d-effect ai-assistant-card">
-                <h3 className="card-title">🤖 AI Meeting Assistant</h3>
-                <div style={{fontSize: '0.875rem', lineHeight: '1.6', color: 'var(--text-secondary)'}}>
-                  <p>IntellMeet runs automated speech-to-text summaries to boost efficiency by <b>40-60%</b>.</p>
-                  {tasks.length > 0 ? (
-                    <div className="action-item-card mt-4">
-                      <div className="action-item-card-title">Latest Extracted Task:</div>
-                      <div>{tasks[tasks.length - 1].title}</div>
-                      <span className="badge badge-primary mt-2">Assigned: {tasks[tasks.length - 1].assignee}</span>
-                    </div>
-                  ) : (
-                    <div className="action-item-card mt-4" style={{ backgroundColor: 'var(--bg-secondary)', borderStyle: 'dashed' }}>
-                      <div className="action-item-card-title" style={{ opacity: 0.6 }}>No actions extracted yet.</div>
-                      <div style={{ fontSize: '0.8rem', opacity: 0.8 }}>Start a meeting room to automatically capture and assign tasks in real-time.</div>
                     </div>
                   )}
                 </div>
@@ -3290,11 +3277,11 @@ export default function App() {
                     )}
                   </div>
 
-                  <div style={{ maxHeight: '300px', overflowY: 'auto', borderRadius: '8px', border: '1px solid var(--color-border)', backgroundColor: '#f8fafc' }}>
+                  <div style={{ maxHeight: '300px', overflowY: 'auto', borderRadius: '8px', border: '1px solid var(--color-border)', backgroundColor: 'var(--bg-secondary)' }}>
                     {userEmailLogs.length > 0 ? (
                       <div style={{ padding: '1rem' }}>
                         {userEmailLogs.map((log) => (
-                          <div key={log.id} style={{ padding: '1rem', backgroundColor: 'white', border: '1px solid var(--color-border)', borderRadius: '8px', marginBottom: '0.75rem', boxShadow: 'var(--shadow-sm)' }}>
+                          <div key={log.id} style={{ padding: '1rem', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--color-border)', borderRadius: '8px', marginBottom: '0.75rem', boxShadow: 'var(--shadow-sm)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed var(--color-border)', paddingBottom: '0.5rem', marginBottom: '0.5rem', fontSize: '0.8rem' }}>
                               <span style={{ color: '#2563eb', fontWeight: 600 }}>✉️ TO: {log.to}</span>
                               <span style={{ color: 'var(--text-muted)' }}>{log.timestamp} • {log.id}</span>
@@ -3302,7 +3289,7 @@ export default function App() {
                             <div style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
                               Subject: {log.subject}
                             </div>
-                            <div style={{ fontSize: '0.825rem', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', fontFamily: 'monospace', backgroundColor: '#fdfdfd', padding: '0.5rem', borderRadius: '4px', border: '1px solid #f1f5f9' }}>
+                            <div style={{ fontSize: '0.825rem', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', fontFamily: 'monospace', backgroundColor: 'var(--bg-secondary)', padding: '0.5rem', borderRadius: '4px', border: '1px solid var(--color-border)' }}>
                               {log.body.replace(/\\n/g, '\n')}
                             </div>
                           </div>
@@ -3327,7 +3314,14 @@ export default function App() {
           <div style={{display: 'flex', flexDirection: 'column', height: '100%'}}>
             <div className="workspace-header" style={{marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem'}}>
               <div>
-                <h1 className="workspace-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>📹 {meetingTitle}</h1>
+                <h1 className="workspace-title" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  📹 {meetingTitle}
+                  {prefLowBandwidth && (
+                    <span className="badge badge-warning" style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem', borderRadius: '4px', textTransform: 'none' }}>
+                      📶 Low Bandwidth Mode Active
+                    </span>
+                  )}
+                </h1>
                 <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
                   <span><b>Meeting ID:</b> {meetingId}</span>
                   {activeMeetingPasscode && (
@@ -3339,50 +3333,147 @@ export default function App() {
               <button className="btn btn-danger 3d-button" onClick={endMeeting}>Leave & Generate Summary</button>
             </div>
 
-            <div className="meeting-room-container">
+            <div className="meeting-room-container" style={{ display: 'flex', gap: '1rem', flex: 1, minHeight: 0 }}>
               {/* Left Video Area: Grid */}
-              <div className="video-section 3d-effect">
-                <div className="video-grid">
-                  {/* Local User (You) */}
-                  <div className={`video-feed ${!isMuted ? 'active-speaker' : ''} 3d-effect`}>
-                    {isCamOff ? (
-                      <div className="user-avatar" style={{ width: '80px', height: '80px', background: 'transparent' }}>
-                        {renderUserAvatar({ width: '80px', height: '80px' })}
+              <div className="video-section 3d-effect" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                {isScreenSharing ? (
+                  /* Screen Share Presenter Layout */
+                  <div style={{ display: 'flex', flex: 1, gap: '1rem', height: '100%', minHeight: 0, padding: '0.5rem' }}>
+                    {/* Central Large Presentation Area */}
+                    <div className="3d-effect" style={{ 
+                      flex: 3.5, 
+                      backgroundColor: '#0f172a', 
+                      borderRadius: '12px', 
+                      position: 'relative', 
+                      display: 'flex', 
+                      flexDirection: 'column',
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      overflow: 'hidden',
+                      border: '2px solid var(--color-teal)'
+                    }}>
+                      <video 
+                        ref={(el) => {
+                          if (el && screenStreamRef.current) {
+                            el.srcObject = screenStreamRef.current;
+                            el.play().catch(e => console.warn("Screen video play error:", e));
+                          }
+                        }}
+                        autoPlay 
+                        playsInline 
+                        muted 
+                        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                      />
+                      <div style={{
+                        position: 'absolute',
+                        bottom: '12px',
+                        left: '12px',
+                        backgroundColor: 'rgba(0,0,0,0.6)',
+                        padding: '4px 8px',
+                        borderRadius: '6px',
+                        fontSize: '0.75rem',
+                        color: 'white',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        zIndex: 10
+                      }}>
+                        🖥️ You are sharing your screen
                       </div>
-                    ) : (
-                      <canvas ref={myVideoRef} width="320" height="180"></canvas>
-                    )}
-                    <span className="participant-label">
-                      <div style={{width: '20px', height: '20px', display: 'inline-block'}}>{renderUserAvatar({ width: '20px', height: '20px' })}</div>
-                      {username} (You)
-                    </span>
+                    </div>
+
+                    {/* Sidebar Compact Participants Grid */}
+                    <div style={{ 
+                      flex: 1, 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      gap: '0.75rem', 
+                      overflowY: 'auto',
+                      paddingRight: '4px',
+                      maxWidth: '220px'
+                    }}>
+                      {/* Host Camera card (in compact form) */}
+                      <div className="video-feed 3d-effect" style={{ height: '120px', minHeight: '120px', margin: 0, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div className="user-avatar" style={{ width: '50px', height: '50px', background: 'transparent' }}>
+                          {renderUserAvatar({ width: '50px', height: '50px' })}
+                        </div>
+                        <span className="participant-label" style={{ fontSize: '0.7rem', padding: '2px 6px' }}>You (Host)</span>
+                      </div>
+
+                      {/* Remote Participants */}
+                      {meetingParticipants.map((p) => (
+                        <div key={p.userId || p.socketId} className={`video-feed ${!p.isMuted ? 'active-speaker' : ''} 3d-effect`} style={{ height: '120px', minHeight: '120px', margin: 0 }}>
+                          {p.isCamOff ? (
+                            <div className="user-avatar" style={{ width: '45px', height: '45px', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <div style={{ width: '45px', height: '45px' }}>
+                                {renderRemoteUserAvatar(p.avatarIdx, p.avatarUrl, { width: '45px', height: '45px' })}
+                              </div>
+                            </div>
+                          ) : (
+                            <ParticipantSimulatedVideo participant={p} />
+                          )}
+                          <span className="participant-label" style={{ fontSize: '0.7rem', padding: '2px 6px' }}>
+                            {p.username}
+                            {p.isMuted && <MicOff size={10} style={{ color: 'var(--color-danger)', marginLeft: '3px', display: 'inline-block' }} />}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-
-
-                  {/* Real Remote Participants */}
-                  {meetingParticipants.map((p) => (
-                    <div key={p.userId || p.socketId} className={`video-feed ${!p.isMuted ? 'active-speaker' : ''} 3d-effect`}>
-                      {p.isCamOff ? (
-                        <div className="user-avatar" style={{ width: '80px', height: '80px', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <div style={{ width: '80px', height: '80px' }}>
-                            {renderRemoteUserAvatar(p.avatarIdx, p.avatarUrl, { width: '80px', height: '80px' })}
-                          </div>
+                ) : (
+                  /* Standard Grid Layout when no one is sharing */
+                  <div className="video-grid">
+                    {/* Local User (You) */}
+                    <div className={`video-feed ${!isMuted ? 'active-speaker' : ''} 3d-effect`}>
+                      {isCamOff ? (
+                        <div className="user-avatar" style={{ width: '80px', height: '80px', background: 'transparent' }}>
+                          {renderUserAvatar({ width: '80px', height: '80px' })}
                         </div>
                       ) : (
-                        <ParticipantSimulatedVideo participant={p} />
+                        <video 
+                          ref={(el) => {
+                            if (el && localStreamRef.current) {
+                              el.srcObject = localStreamRef.current;
+                              el.play().catch(e => console.warn("Camera video play error:", e));
+                            }
+                          }}
+                          autoPlay 
+                          playsInline 
+                          muted 
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '12px' }}
+                        />
                       )}
                       <span className="participant-label">
-                        <div style={{width: '20px', height: '20px', display: 'inline-block'}}>
-                          {renderRemoteUserAvatar(p.avatarIdx, p.avatarUrl, { width: '20px', height: '20px' })}
-                        </div>
-                        {p.username}
-                        {p.isMuted && (
-                          <MicOff size={12} style={{ color: 'var(--color-danger)', marginLeft: '5px', display: 'inline-block' }} />
-                        )}
+                        <div style={{width: '20px', height: '20px', display: 'inline-block'}}>{renderUserAvatar({ width: '20px', height: '20px' })}</div>
+                        {username} (You)
                       </span>
                     </div>
-                  ))}
-                </div>
+
+                    {/* Real Remote Participants */}
+                    {meetingParticipants.map((p) => (
+                      <div key={p.userId || p.socketId} className={`video-feed ${!p.isMuted ? 'active-speaker' : ''} 3d-effect`}>
+                        {p.isCamOff ? (
+                          <div className="user-avatar" style={{ width: '80px', height: '80px', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div style={{ width: '80px', height: '80px' }}>
+                              {renderRemoteUserAvatar(p.avatarIdx, p.avatarUrl, { width: '80px', height: '80px' })}
+                            </div>
+                          </div>
+                        ) : (
+                          <ParticipantSimulatedVideo participant={p} />
+                        )}
+                        <span className="participant-label">
+                          <div style={{width: '20px', height: '20px', display: 'inline-block'}}>
+                            {renderRemoteUserAvatar(p.avatarIdx, p.avatarUrl, { width: '20px', height: '20px' })}
+                          </div>
+                          {p.username}
+                          {p.isMuted && (
+                            <MicOff size={12} style={{ color: 'var(--color-danger)', marginLeft: '5px', display: 'inline-block' }} />
+                          )}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Control bar */}
                 <div className="video-controls">
@@ -3402,7 +3493,7 @@ export default function App() {
 
                   <button 
                     className={`control-btn ${isScreenSharing ? 'active' : ''}`}
-                    onClick={() => setIsScreenSharing(!isScreenSharing)}
+                    onClick={toggleScreenShare}
                   >
                     <MonitorUp size={20} />
                   </button>
@@ -3449,6 +3540,12 @@ export default function App() {
                   >
                     Actions
                   </button>
+                  <button 
+                    className={`tab-btn ${activeRightTab === 'members' ? 'active' : ''}`}
+                    onClick={() => setActiveRightTab('members')}
+                  >
+                    Members ({1 + meetingParticipants.length})
+                  </button>
                 </div>
 
                 <div className="scroll-content">
@@ -3466,26 +3563,113 @@ export default function App() {
 
                   {activeRightTab === 'chat' && (
                     <div style={{display: 'flex', flexDirection: 'column', gap: '0.75rem', height: '100%'}}>
-                      {chatMessages.map(msg => (
-                        <div key={msg.id} className="message-bubble 3d-effect" style={{
-                          alignSelf: msg.sender === username ? 'flex-end' : 'flex-start', 
-                          backgroundColor: msg.sender === username ? '#f0fdf4' : '',
+                      {/* Pinned Messages Banner */}
+                      {pinnedChatIds.length > 0 && (
+                        <div style={{
+                          backgroundColor: 'rgba(80, 163, 164, 0.08)',
+                          border: '1px solid var(--color-teal)',
+                          borderRadius: '8px',
+                          padding: '0.6rem 0.75rem',
+                          fontSize: '0.75rem',
                           display: 'flex',
-                          gap: '0.5rem',
-                          alignItems: 'center',
-                          maxWidth: '85%'
+                          flexDirection: 'column',
+                          gap: '0.35rem',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
                         }}>
-                          <div style={{width: '24px', height: '24px', flexShrink: 0}}>
-                            {msg.sender === username ? renderUserAvatar({ width: '24px', height: '24px' }) : AVATAR_LOGOS[msg.avatarLogoIndex !== undefined ? msg.avatarLogoIndex : 0]}
-                          </div>
-                          <div>
-                            <div className="message-speaker">{msg.sender} <span style={{fontSize: '0.65rem', color: 'var(--text-muted)'}}>{msg.time}</span></div>
-                            <div className="message-text">{msg.text}</div>
+                          <strong style={{ color: 'var(--color-teal)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            📌 Pinned Chats ({pinnedChatIds.length})
+                          </strong>
+                          <div style={{ maxHeight: '100px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                            {chatMessages.filter(msg => pinnedChatIds.includes(msg.id)).map(msg => (
+                              <div key={`pinned-${msg.id}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid rgba(0,0,0,0.05)', paddingBottom: '2px' }}>
+                                <div style={{ paddingRight: '12px' }}>
+                                  <strong>{msg.sender}:</strong> <span>{msg.text}</span>
+                                </div>
+                                <button 
+                                  style={{ background: 'none', border: 'none', color: 'var(--color-danger)', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 600, padding: 0 }}
+                                  onClick={() => setPinnedChatIds(prev => prev.filter(id => id !== msg.id))}
+                                >
+                                  Unpin
+                                </button>
+                              </div>
+                            ))}
                           </div>
                         </div>
-                      ))}
+                      )}
+
+                      {/* Chat Messages List */}
+                      <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem', paddingRight: '4px' }}>
+                        {chatMessages.filter(msg => !msg.recipient || msg.recipient === 'Everyone' || msg.recipient === username || msg.sender === username).map(msg => {
+                          const isPrivate = msg.recipient && msg.recipient !== 'Everyone';
+                          return (
+                            <div key={msg.id} className="message-bubble 3d-effect" style={{
+                              alignSelf: msg.sender === username ? 'flex-end' : 'flex-start', 
+                              backgroundColor: isPrivate ? '#fef2f2' : (msg.sender === username ? '#f0fdf4' : ''),
+                              border: isPrivate ? '1px dashed var(--color-danger)' : 'none',
+                              display: 'flex',
+                              gap: '0.5rem',
+                              alignItems: 'flex-start',
+                              maxWidth: '85%',
+                              position: 'relative'
+                            }}>
+                              <div style={{width: '24px', height: '24px', flexShrink: 0, marginTop: '2px'}}>
+                                {msg.sender === username ? renderUserAvatar({ width: '24px', height: '24px' }) : AVATAR_LOGOS[msg.avatarLogoIndex !== undefined ? msg.avatarLogoIndex : 0]}
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <div className="message-speaker" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+                                  <span>{msg.sender} <span style={{fontSize: '0.65rem', color: 'var(--text-muted)'}}>{msg.time}</span></span>
+                                  {/* Pin button */}
+                                  <button 
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: pinnedChatIds.includes(msg.id) ? 'var(--color-teal)' : 'var(--text-muted)', fontSize: '0.75rem', display: 'flex', alignItems: 'center' }}
+                                    onClick={() => {
+                                      if (pinnedChatIds.includes(msg.id)) {
+                                        setPinnedChatIds(prev => prev.filter(id => id !== msg.id));
+                                      } else {
+                                        setPinnedChatIds(prev => [...prev, msg.id]);
+                                      }
+                                    }}
+                                    title={pinnedChatIds.includes(msg.id) ? "Unpin Message" : "Pin Message"}
+                                  >
+                                    📌
+                                  </button>
+                                </div>
+                                {isPrivate && (
+                                  <div style={{ fontSize: '0.65rem', color: 'var(--color-danger)', fontWeight: 600, marginBottom: '2px' }}>
+                                    {msg.sender === username ? `🔒 private chat with ${msg.recipient}` : `🔒 private chat from ${msg.sender}`}
+                                  </div>
+                                )}
+                                <div className="message-text">{msg.text}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                       
-                      <div className="input-with-send">
+                      {/* Send Target Selector */}
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', backgroundColor: 'var(--bg-secondary)', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--color-border)' }}>
+                        <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Send to:</span>
+                        <select 
+                          style={{
+                            margin: 0, 
+                            padding: '2px 6px', 
+                            fontSize: '0.75rem', 
+                            borderRadius: '4px', 
+                            border: '1px solid var(--color-border)', 
+                            backgroundColor: 'var(--bg-primary)',
+                            color: 'var(--text-primary)',
+                            cursor: 'pointer'
+                          }}
+                          value={chatTarget}
+                          onChange={(e) => setChatTarget(e.target.value)}
+                        >
+                          <option value="Everyone">Everyone (Public)</option>
+                          {meetingParticipants.map(p => (
+                            <option key={p.userId || p.socketId} value={p.username}>{p.username} (Private)</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="input-with-send" style={{ marginTop: 0 }}>
                         <input 
                           type="text" 
                           className="form-input 3d-effect" 
@@ -3577,6 +3761,68 @@ export default function App() {
                       <button className="btn btn-primary w-full 3d-button" onClick={handleAddActionItem}>
                         <Plus size={16} /> Post Task
                       </button>
+                    </div>
+                  )}
+
+                  {activeRightTab === 'members' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--color-primary)', borderBottom: '1px solid var(--color-border)', paddingBottom: '0.5rem', margin: 0 }}>
+                        Participants ({1 + meetingParticipants.length})
+                      </h3>
+                      
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        {/* Host */}
+                        <div className="3d-effect" style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '0.6rem 0.75rem',
+                          backgroundColor: 'var(--bg-secondary)',
+                          borderRadius: '8px',
+                          border: '1px solid var(--color-border)'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <div style={{ width: '28px', height: '28px' }}>
+                              {renderUserAvatar({ width: '28px', height: '28px' })}
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '0.825rem', fontWeight: 600, color: 'var(--text-primary)' }}>{username}</div>
+                              <div style={{ fontSize: '0.65rem', color: 'var(--color-teal)', fontWeight: 600 }}>Host (You)</div>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            {isMuted ? <MicOff size={16} style={{ color: 'var(--color-danger)' }} /> : <Mic size={16} style={{ color: 'var(--color-teal)' }} />}
+                            {isCamOff ? <VideoOff size={16} style={{ color: 'var(--color-danger)' }} /> : <Video size={16} style={{ color: 'var(--color-teal)' }} />}
+                          </div>
+                        </div>
+
+                        {/* Remote Members */}
+                        {meetingParticipants.map(p => (
+                          <div key={p.userId || p.socketId} className="3d-effect" style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '0.6rem 0.75rem',
+                            backgroundColor: 'var(--bg-primary)',
+                            borderRadius: '8px',
+                            border: '1px solid var(--color-border)'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <div style={{ width: '28px', height: '28px' }}>
+                                {renderRemoteUserAvatar(p.avatarIdx, p.avatarUrl, { width: '28px', height: '28px' })}
+                              </div>
+                              <div>
+                                <div style={{ fontSize: '0.825rem', fontWeight: 600, color: 'var(--text-primary)' }}>{p.username}</div>
+                                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{p.position || 'Guest Participant'}</div>
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              {p.isMuted ? <MicOff size={16} style={{ color: 'var(--color-danger)' }} /> : <Mic size={16} style={{ color: 'var(--color-teal)' }} />}
+                              {p.isCamOff ? <VideoOff size={16} style={{ color: 'var(--color-danger)' }} /> : <Video size={16} style={{ color: 'var(--color-teal)' }} />}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -3714,7 +3960,7 @@ export default function App() {
                 <div style={{height: '240px', display: 'flex', alignItems: 'flex-end', gap: '1rem', padding: '1rem 0'}}>
                   {[120, 160, 90, 180].map((h, i) => (
                     <div key={i} style={{display: 'flex', flexDirection: 'column', alignItems: 'center', flexGrow: 1}}>
-                      <div className="3d-effect" style={{width: '40px', height: `${h}px', backgroundColor: 'var(--color-primary)', borderRadius: '6px 6px 0 0`}}></div>
+                      <div className="3d-effect" style={{width: '40px', height: `${h}px`, backgroundColor: 'var(--color-primary)', borderRadius: '6px 6px 0 0'}}></div>
                       <span style={{fontSize: '0.75rem', marginTop: '0.5rem'}}>Wk {i+1}</span>
                     </div>
                   ))}
@@ -3759,14 +4005,32 @@ export default function App() {
               </div>
             </div>
 
-            <div className="form-group flex gap-2 mb-4" style={{maxWidth: '400px'}}>
-              <input 
-                type="text" 
-                className="form-input 3d-effect" 
-                value={historySearchQuery}
-                onChange={(e) => setHistorySearchQuery(e.target.value)}
-                placeholder="Search meeting titles..."
-              />
+            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.25rem', maxWidth: '600px', flexWrap: 'wrap' }}>
+              <div className="form-group" style={{ flex: 1, margin: 0 }}>
+                <input 
+                  type="text" 
+                  className="form-input 3d-effect" 
+                  value={historySearchQuery}
+                  onChange={(e) => setHistorySearchQuery(e.target.value)}
+                  placeholder="Search meeting titles..."
+                />
+              </div>
+              <div className="form-group" style={{ width: '180px', margin: 0 }}>
+                <select
+                  className="form-input 3d-effect"
+                  value={prefHistoryVisibility}
+                  onChange={(e) => {
+                    setPrefHistoryVisibility(e.target.value);
+                    localStorage.setItem('pref_history_visibility', e.target.value);
+                  }}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <option value="All Time">📅 All Time</option>
+                  <option value="Past Week">📅 Past Week</option>
+                  <option value="Past Month">📅 Past Month</option>
+                  <option value="Past Year">📅 Past Year</option>
+                </select>
+              </div>
             </div>
 
             <div className="history-table-container 3d-effect">
@@ -3783,9 +4047,19 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {historyList.filter(h => 
-                    h.title.toLowerCase().includes(historySearchQuery.toLowerCase())
-                  ).map(meet => (
+                  {historyList.filter(h => {
+                    const matchesSearch = h.title.toLowerCase().includes(historySearchQuery.toLowerCase());
+                    if (!matchesSearch) return false;
+                    if (prefHistoryVisibility === 'All Time') return true;
+                    const meetingTime = new Date(h.date).getTime();
+                    if (isNaN(meetingTime)) return true;
+                    const diffMs = Date.now() - meetingTime;
+                    const oneDay = 24 * 60 * 60 * 1000;
+                    if (prefHistoryVisibility === 'Past Week') return diffMs <= 7 * oneDay;
+                    if (prefHistoryVisibility === 'Past Month') return diffMs <= 30 * oneDay;
+                    if (prefHistoryVisibility === 'Past Year') return diffMs <= 365 * oneDay;
+                    return true;
+                  }).map(meet => (
                     <tr key={meet.id}>
                       <td style={{fontWeight: 600, color: 'var(--color-primary)'}}>{meet.id}</td>
                       <td style={{fontWeight: 500}}>{meet.title}</td>
@@ -3828,26 +4102,55 @@ export default function App() {
                   <p style={{color: 'var(--text-secondary)'}}>Start a meeting room and click the record button to capture live sessions.</p>
                 </div>
               ) : (
-                recordings.map(rec => (
-                  <div key={rec.id} className="dashboard-card col-4 3d-effect hover-lift">
-                    <div style={{height: '140px', backgroundColor: '#0f172a', borderRadius: '8px', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem', overflow: 'hidden'}}>
-                      <Video size={36} style={{color: 'white', opacity: 0.5}} />
-                      <div style={{position: 'absolute', bottom: '10px', right: '10px', backgroundColor: 'rgba(0,0,0,0.8)', color: 'white', fontSize: '0.75rem', padding: '0.15rem 0.5rem', borderRadius: '4px'}}>
-                        {rec.duration}
+                recordings.map(rec => {
+                  const isArchived = rec.isArchived;
+                  let expiryDays = 0;
+                  if (rec.expiresAt) {
+                    const diff = new Date(rec.expiresAt).getTime() - Date.now();
+                    expiryDays = Math.ceil(diff / (24 * 60 * 60 * 1000));
+                  }
+
+                  return (
+                    <div key={rec.id} className="dashboard-card col-4 3d-effect hover-lift">
+                      <div style={{height: '140px', backgroundColor: '#0f172a', borderRadius: '8px', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem', overflow: 'hidden'}}>
+                        <Video size={36} style={{color: 'white', opacity: 0.5}} />
+                        
+                        {/* Expiration count or Saved badge overlay */}
+                        <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 10 }}>
+                          {isArchived ? (
+                            <span className="badge badge-green font-semibold" style={{ fontSize: '0.65rem', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>💾 Saved Permanent</span>
+                          ) : (
+                            <span className="badge badge-warning font-semibold" style={{ fontSize: '0.65rem', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+                              ⏳ {expiryDays > 0 ? `${expiryDays} days left` : 'Expired'}
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{position: 'absolute', bottom: '10px', right: '10px', backgroundColor: 'rgba(0,0,0,0.8)', color: 'white', fontSize: '0.75rem', padding: '0.15rem 0.5rem', borderRadius: '4px'}}>
+                          {rec.duration}
+                        </div>
+                      </div>
+                      <h4 style={{fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.25rem'}}>{rec.title}</h4>
+                      <p style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1rem'}}>Recorded: {rec.date} • ID: {rec.id}</p>
+                      <div className="flex gap-2">
+                        <button className="btn btn-primary btn-sm w-full 3d-button" onClick={() => handleOpenPlayback(rec)}>
+                          <Play size={14} /> Playback
+                        </button>
+                        <button 
+                          className={`btn ${isArchived ? 'btn-secondary' : 'btn-success'} btn-sm 3d-button`} 
+                          onClick={() => handleToggleArchiveRecording(rec.id)} 
+                          title={isArchived ? "Remove from permanent archive" : "Archive permanently before expiration"}
+                          style={{ padding: '0.5rem' }}
+                        >
+                          💾
+                        </button>
+                        <button className="btn btn-danger btn-sm 3d-button" onClick={() => handleDeleteRecording(rec.id)} style={{padding: '0.5rem'}}>
+                          <Trash2 size={14} />
+                        </button>
                       </div>
                     </div>
-                    <h4 style={{fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.25rem'}}>{rec.title}</h4>
-                    <p style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1rem'}}>Recorded: {rec.date} • ID: {rec.id}</p>
-                    <div className="flex gap-2">
-                      <button className="btn btn-primary btn-sm w-full 3d-button" onClick={() => handleOpenPlayback(rec)}>
-                        <Play size={14} /> Playback
-                      </button>
-                      <button className="btn btn-danger btn-sm 3d-button" onClick={() => handleDeleteRecording(rec.id)} style={{padding: '0.5rem'}}>
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -3965,6 +4268,69 @@ export default function App() {
                     </label>
                   </div>
 
+                  {/* History Visibility */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--color-border)', paddingTop: '1rem', marginTop: '0.5rem' }}>
+                    <div>
+                      <h4 style={{ fontWeight: 600, fontSize: '0.95rem' }}>Meeting History Visibility</h4>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Show past meetings created within this specific timeframe.</p>
+                    </div>
+                    <select 
+                      className="form-input 3d-effect" 
+                      style={{ width: '160px', margin: 0, padding: '0.35rem 0.75rem', fontSize: '0.85rem' }}
+                      value={prefHistoryVisibility}
+                      onChange={(e) => {
+                        setPrefHistoryVisibility(e.target.value);
+                        localStorage.setItem('pref_history_visibility', e.target.value);
+                      }}
+                    >
+                      <option value="All Time">All Time</option>
+                      <option value="Past Week">Past Week</option>
+                      <option value="Past Month">Past Month</option>
+                      <option value="Past Year">Past Year</option>
+                    </select>
+                  </div>
+
+                  {/* Default Download Quality */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
+                    <div>
+                      <h4 style={{ fontWeight: 600, fontSize: '0.95rem' }}>Default Recording Quality</h4>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Set resolution aspect for downloaded meeting recording MP4s.</p>
+                    </div>
+                    <select 
+                      className="form-input 3d-effect" 
+                      style={{ width: '160px', margin: 0, padding: '0.35rem 0.75rem', fontSize: '0.85rem' }}
+                      value={prefDownloadQuality}
+                      onChange={(e) => {
+                        setPrefDownloadQuality(e.target.value);
+                        localStorage.setItem('pref_download_quality', e.target.value);
+                      }}
+                    >
+                      <option value="480p (SD)">480p (SD)</option>
+                      <option value="720p (HD)">720p (HD)</option>
+                      <option value="1080p (FHD)">1080p (FHD)</option>
+                      <option value="1440p (QHD)">1440p (QHD)</option>
+                    </select>
+                  </div>
+
+                  {/* Low Bandwidth Mode */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem', marginBottom: '1rem' }}>
+                    <div>
+                      <h4 style={{ fontWeight: 600, fontSize: '0.95rem' }}>Low Bandwidth Mode</h4>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Turn off intensive live grid canvas drawing on slow networks.</p>
+                    </div>
+                    <label className="switch-container">
+                      <input 
+                        type="checkbox" 
+                        checked={prefLowBandwidth} 
+                        onChange={(e) => {
+                          setPrefLowBandwidth(e.target.checked);
+                          localStorage.setItem('pref_low_bandwidth', e.target.checked ? 'true' : 'false');
+                        }}
+                      />
+                      <span className="slider-round"></span>
+                    </label>
+                  </div>
+
                   {/* Theme Mode Toggle (Light/Dark) */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--color-border)', paddingTop: '1rem' }}>
                     <div>
@@ -3999,10 +4365,11 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Webcam Stream Preview Box */}
                 {isWebcamActive && (
-                  <div className="3d-effect" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', padding: '1rem', backgroundColor: 'var(--video-bg)', borderRadius: '12px', marginBottom: '1.25rem' }}>
-                    <video ref={webcamVideoRef} style={{ width: '100%', maxHeight: '180px', borderRadius: '8px', objectFit: 'cover' }} playsInline muted />
+                  <div className="3d-effect" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', padding: '1.25rem', backgroundColor: 'var(--video-bg)', borderRadius: '12px', marginBottom: '1.25rem' }}>
+                    <div style={{ width: '200px', height: '200px', borderRadius: '12px', overflow: 'hidden', border: '2px solid var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000', boxShadow: 'var(--shadow-md)' }}>
+                      <video ref={webcamVideoRef} style={{ width: '100%', height: '100%', objectFit: 'cover' }} playsInline muted />
+                    </div>
                     {cameraError && <p style={{ color: 'var(--color-danger)', fontSize: '0.8rem' }}>{cameraError}</p>}
                     <button className="btn btn-success btn-sm 3d-button" onClick={captureWebcamSnapshot}>
                       📸 Capture & Set Profile Photo
@@ -4132,73 +4499,7 @@ export default function App() {
                 )}
               </div>
 
-              {/* SMTP Mail Server Configuration */}
-              <div className="dashboard-card col-12 3d-effect" style={{ marginTop: '1.5rem' }}>
-                <h3 className="card-title">🔑 SMTP Email Server Configuration (Real OTP Setup)</h3>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
-                  Configure your SMTP credentials below to send real OTP verification emails to registered email addresses. If left unconfigured, a zero-config dev mode Ethereal testing account will auto-generate and capture OTP codes.
-                </p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">SMTP Host / Server</label>
-                    <input 
-                      type="text" 
-                      className="form-input 3d-effect" 
-                      value={smtpHost} 
-                      onChange={(e) => setSmtpHost(e.target.value)} 
-                      placeholder="e.g. smtp.gmail.com" 
-                    />
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">SMTP Port</label>
-                    <input 
-                      type="text" 
-                      className="form-input 3d-effect" 
-                      value={smtpPort} 
-                      onChange={(e) => setSmtpPort(e.target.value)} 
-                      placeholder="e.g. 587 or 465" 
-                    />
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">SMTP Username (Email)</label>
-                    <input 
-                      type="text" 
-                      className="form-input 3d-effect" 
-                      value={smtpUser} 
-                      onChange={(e) => setSmtpUser(e.target.value)} 
-                      placeholder="user@example.com" 
-                    />
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">SMTP Password</label>
-                    <input 
-                      type="password" 
-                      className="form-input 3d-effect" 
-                      value={smtpPass} 
-                      onChange={(e) => setSmtpPass(e.target.value)} 
-                      placeholder="Your App Password" 
-                    />
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">Sender Address / Envelope</label>
-                    <input 
-                      type="text" 
-                      className="form-input 3d-effect" 
-                      value={smtpSender} 
-                      onChange={(e) => setSmtpSender(e.target.value)} 
-                      placeholder='"IntellMeet Support" <no-reply@intellmeet.com>' 
-                    />
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: '1rem', marginTop: '1.25rem' }}>
-                  <button className="btn btn-primary 3d-button" onClick={saveSmtpSettings}>
-                    Save SMTP Configuration
-                  </button>
-                  <button className="btn btn-secondary 3d-button" onClick={testSendEmail} disabled={!smtpHost || !smtpUser}>
-                    Send Test Email
-                  </button>
-                </div>
-              </div>
+
 
             </div>
           </div>
@@ -4333,7 +4634,7 @@ export default function App() {
                           borderRadius: '50%',
                           border: selectedAvatarIdx === idx ? '2px solid var(--color-primary)' : '2px solid transparent',
                           padding: '2px',
-                          backgroundColor: selectedAvatarIdx === idx ? 'white' : 'transparent',
+                          backgroundColor: selectedAvatarIdx === idx ? 'var(--bg-primary)' : 'transparent',
                           transform: selectedAvatarIdx === idx ? 'scale(1.08)' : 'none',
                           transition: 'all 0.2s ease',
                           display: 'flex',
@@ -4391,8 +4692,10 @@ export default function App() {
                     cursor: 'pointer'
                   }}
                 >
+                  <option value="480p">480p (SD)</option>
                   <option value="720p">720p (HD)</option>
                   <option value="1080p">1080p (Full HD)</option>
+                  <option value="1440p">1440p (QHD)</option>
                 </select>
               </div>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -4595,6 +4898,9 @@ export default function App() {
 
       {/* Hidden Video element for webcam streaming */}
       <video ref={hiddenVideoRef} style={{ display: 'none' }} playsInline muted />
+
+      {/* Hidden Video element for screen share streaming */}
+      <video ref={hiddenScreenVideoRef} style={{ display: 'none' }} playsInline muted />
 
       {/* Render Authentication Modal if needed */}
       {renderAuthModal()}

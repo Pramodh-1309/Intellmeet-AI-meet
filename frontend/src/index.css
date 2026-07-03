@@ -37,10 +37,13 @@
   --color-danger: var(--danger);
   --color-warning: var(--warning);
 
-  /* Sidebar overrides */
-  --sidebar-bg: var(--secondary);
-  --sidebar-hover: var(--hover);
-  --sidebar-border: #563E35;   /* Darker brown border line */
+  /* Sidebar overrides (Dark Brown Branding Theme) */
+  --sidebar-bg: linear-gradient(180deg, #674A40 0%, #563E35 100%);
+  --sidebar-hover: rgba(255, 255, 255, 0.08);
+  --sidebar-border: rgba(255, 255, 255, 0.06);
+  --sidebar-text: #E5DCD9;
+  --sidebar-active-bg: rgba(255, 255, 255, 0.15);
+  --sidebar-active-text: #ffffff;
   
   /* Meeting specific */
   --video-bg: #2B1F1B;
@@ -70,6 +73,13 @@
   
   --color-border: var(--border);
   --color-light: #2E3E3E;      /* Dark teal tint background */
+
+  --sidebar-bg: linear-gradient(180deg, #18110F 0%, #251B18 100%);
+  --sidebar-hover: rgba(80, 163, 164, 0.12);
+  --sidebar-border: rgba(255, 255, 255, 0.06);
+  --sidebar-text: #FAF8F5;
+  --sidebar-active-bg: rgba(80, 163, 164, 0.2);
+  --sidebar-active-text: #ffffff;
 }
 
 * {
