@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Video, VideoOff, Mic, MicOff, MonitorUp, 
   CheckSquare, Settings, History, BarChart3, Users, 
-  LogOut, Plus, FileDown, Play, Trash2, Send, Download, Volume2, Sun, Moon
+  LogOut, Plus, FileDown, Play, Trash2, Send, Download, Volume2, Sun, Moon,
+  Calendar, Clock, Smile, TrendingUp, TrendingDown, Sparkles, AlertTriangle, CheckCircle, Info
 } from 'lucide-react';
 import './App.css';
 import { supabase, isSupabaseConfigured, saveSupabaseKeys, clearSupabaseKeys } from './supabase';
@@ -205,6 +206,256 @@ const AVATAR_LOGOS = [
   )
 ];
 
+interface MeetingAnalytics {
+  id: string;
+  title: string;
+  date: string;
+  totalMeetings: number;
+  totalMeetingsTrend: string;
+  totalMeetingsTrendDirection: 'up' | 'down';
+  totalDuration: string;
+  totalDurationTrend: string;
+  totalDurationTrendDirection: 'up' | 'down';
+  avgSentiment: number;
+  avgSentimentTrend: string;
+  avgSentimentTrendDirection: 'up' | 'down';
+  efficiencyScore: number;
+  efficiencyScoreTrend: string;
+  efficiencyScoreTrendDirection: 'up' | 'down';
+  weeklyFrequency: { height: number; label: string; count: number }[];
+  productivityTrends: { x: number; y: number; label: string }[];
+  speakers: { name: string; talkTime: number; percentage: number; color: string; interruptions: number; clarity: number }[];
+  sentimentFlow: { time: string; positive: number; neutral: number; negative: number }[];
+  engagementScore: number;
+  topics: { name: string; count: number; importance: 'high' | 'medium' | 'low' }[];
+  insights: { title: string; desc: string; type: 'info' | 'warning' | 'success' }[];
+}
+
+const MOCK_ANALYTICS_DATA: { [key: string]: MeetingAnalytics } = {
+  all: {
+    id: 'all',
+    title: 'All Workspace Meetings',
+    date: 'Last 30 Days',
+    totalMeetings: 24,
+    totalMeetingsTrend: '+12% vs last month',
+    totalMeetingsTrendDirection: 'up',
+    totalDuration: '36.5 hrs',
+    totalDurationTrend: '+8.4% vs last month',
+    totalDurationTrendDirection: 'up',
+    avgSentiment: 82,
+    avgSentimentTrend: '+2.5% vs last week',
+    avgSentimentTrendDirection: 'up',
+    efficiencyScore: 88,
+    efficiencyScoreTrend: '+4.1% vs last week',
+    efficiencyScoreTrendDirection: 'up',
+    weeklyFrequency: [
+      { height: 120, label: 'Wk 1', count: 5 },
+      { height: 160, label: 'Wk 2', count: 7 },
+      { height: 90, label: 'Wk 3', count: 4 },
+      { height: 180, label: 'Wk 4', count: 8 },
+    ],
+    productivityTrends: [
+      { x: 0, y: 180, label: 'Sprint 1' },
+      { x: 100, y: 120, label: 'Sprint 2' },
+      { x: 200, y: 140, label: 'Sprint 3' },
+      { x: 300, y: 80, label: 'Sprint 4' },
+      { x: 400, y: 40, label: 'Sprint 5' },
+    ],
+    speakers: [
+      { name: 'Alex Johnson (Host)', talkTime: 720, percentage: 38, color: '#50A3A4', interruptions: 12, clarity: 94 },
+      { name: 'Sarah Miller', talkTime: 480, percentage: 25, color: '#FCAF38', interruptions: 5, clarity: 89 },
+      { name: 'David Chen', talkTime: 360, percentage: 19, color: '#F95335', interruptions: 18, clarity: 82 },
+      { name: 'System / AI Agent', talkTime: 180, percentage: 10, color: '#674A40', interruptions: 2, clarity: 98 },
+      { name: 'Others', talkTime: 150, percentage: 8, color: '#8D6E63', interruptions: 4, clarity: 91 },
+    ],
+    sentimentFlow: [
+      { time: '0m', positive: 60, neutral: 35, negative: 5 },
+      { time: '10m', positive: 75, neutral: 20, negative: 5 },
+      { time: '20m', positive: 85, neutral: 10, negative: 5 },
+      { time: '30m', positive: 65, neutral: 25, negative: 10 },
+      { time: '40m', positive: 80, neutral: 15, negative: 5 },
+      { time: '50m', positive: 90, neutral: 8, negative: 2 },
+    ],
+    engagementScore: 92,
+    topics: [
+      { name: 'Database Migration', count: 18, importance: 'high' },
+      { name: 'Supabase Config', count: 14, importance: 'high' },
+      { name: 'API Routing', count: 12, importance: 'medium' },
+      { name: 'UI Components', count: 10, importance: 'medium' },
+      { name: 'WebSockets HMR', count: 8, importance: 'low' },
+      { name: 'Action Item Tracking', count: 6, importance: 'low' },
+    ],
+    insights: [
+      { title: 'Excellent Meeting Punctuality', desc: '92% of workspace meetings started within 2 minutes of the scheduled time this month.', type: 'success' },
+      { title: 'High David Interruption Rate', desc: 'David Chen interrupted other speakers 18 times during Sprint 3 & 4. Consider introducing a raising-hand policy.', type: 'warning' },
+      { title: 'AI Automation Efficiency', desc: 'Automated AI transcripts saved an estimated 4.8 hours of manual note-taking this week.', type: 'info' }
+    ]
+  },
+  daily: {
+    id: 'daily',
+    title: 'Sprint 5 Daily Scrum',
+    date: 'July 03, 2026',
+    totalMeetings: 1,
+    totalMeetingsTrend: 'Daily Standard',
+    totalMeetingsTrendDirection: 'up',
+    totalDuration: '18 mins',
+    totalDurationTrend: '-4 mins vs yesterday',
+    totalDurationTrendDirection: 'down',
+    avgSentiment: 85,
+    avgSentimentTrend: 'Warm & collaborative',
+    avgSentimentTrendDirection: 'up',
+    efficiencyScore: 95,
+    efficiencyScoreTrend: 'Under time limit',
+    efficiencyScoreTrendDirection: 'up',
+    weeklyFrequency: [
+      { height: 50, label: 'Mon', count: 1 },
+      { height: 60, label: 'Tue', count: 1 },
+      { height: 45, label: 'Wed', count: 1 },
+      { height: 80, label: 'Thu', count: 1 },
+    ],
+    productivityTrends: [
+      { x: 0, y: 150, label: 'Mon' },
+      { x: 100, y: 100, label: 'Tue' },
+      { x: 200, y: 90, label: 'Wed' },
+      { x: 300, y: 70, label: 'Thu' },
+      { x: 400, y: 30, label: 'Fri' },
+    ],
+    speakers: [
+      { name: 'Alex Johnson (Host)', talkTime: 320, percentage: 30, color: '#50A3A4', interruptions: 1, clarity: 95 },
+      { name: 'Sarah Miller', talkTime: 380, percentage: 35, color: '#FCAF38', interruptions: 2, clarity: 91 },
+      { name: 'David Chen', talkTime: 280, percentage: 26, color: '#F95335', interruptions: 3, clarity: 87 },
+      { name: 'System / AI Agent', talkTime: 100, percentage: 9, color: '#674A40', interruptions: 0, clarity: 99 },
+    ],
+    sentimentFlow: [
+      { time: '0m', positive: 70, neutral: 25, negative: 5 },
+      { time: '4m', positive: 75, neutral: 20, negative: 5 },
+      { time: '8m', positive: 85, neutral: 12, negative: 3 },
+      { time: '12m', positive: 80, neutral: 17, negative: 3 },
+      { time: '16m', positive: 90, neutral: 8, negative: 2 },
+    ],
+    engagementScore: 96,
+    topics: [
+      { name: 'Blockers Check', count: 8, importance: 'high' },
+      { name: 'Vite Build Fix', count: 6, importance: 'high' },
+      { name: 'Task Board Sync', count: 5, importance: 'medium' },
+      { name: 'Deployment Status', count: 3, importance: 'low' },
+    ],
+    insights: [
+      { title: 'Highly Efficient Daily Sync', desc: 'The meeting completed in 18 minutes, well under the 20-minute target limit.', type: 'success' },
+      { title: 'Great Voice Distribution', desc: 'Voice contribution was very balanced, with all team members speaking between 25% and 35% of the time.', type: 'success' }
+    ]
+  },
+  roadmap: {
+    id: 'roadmap',
+    title: 'Product Roadmap Planning',
+    date: 'July 01, 2026',
+    totalMeetings: 1,
+    totalMeetingsTrend: 'Milestone Meeting',
+    totalMeetingsTrendDirection: 'up',
+    totalDuration: '58 mins',
+    totalDurationTrend: 'Scheduled: 60 mins',
+    totalDurationTrendDirection: 'up',
+    avgSentiment: 78,
+    avgSentimentTrend: 'Constructive discussion',
+    avgSentimentTrendDirection: 'up',
+    efficiencyScore: 82,
+    efficiencyScoreTrend: 'Multiple Action Items',
+    efficiencyScoreTrendDirection: 'up',
+    weeklyFrequency: [
+      { height: 100, label: 'Wk 1', count: 1 },
+      { height: 120, label: 'Wk 2', count: 1 },
+      { height: 50, label: 'Wk 3', count: 1 },
+      { height: 110, label: 'Wk 4', count: 1 },
+    ],
+    productivityTrends: [
+      { x: 0, y: 190, label: 'Milestone 1' },
+      { x: 100, y: 160, label: 'Milestone 2' },
+      { x: 200, y: 130, label: 'Milestone 3' },
+      { x: 300, y: 100, label: 'Milestone 4' },
+      { x: 400, y: 50, label: 'Milestone 5' },
+    ],
+    speakers: [
+      { name: 'Alex Johnson (Host)', talkTime: 1680, percentage: 48, color: '#50A3A4', interruptions: 8, clarity: 93 },
+      { name: 'Sarah Miller', talkTime: 1050, percentage: 30, color: '#FCAF38', interruptions: 4, clarity: 90 },
+      { name: 'David Chen', talkTime: 520, percentage: 15, color: '#F95335', interruptions: 10, clarity: 84 },
+      { name: 'Others', talkTime: 250, percentage: 7, color: '#8D6E63', interruptions: 3, clarity: 91 },
+    ],
+    sentimentFlow: [
+      { time: '0m', positive: 50, neutral: 45, negative: 5 },
+      { time: '10m', positive: 65, neutral: 30, negative: 5 },
+      { time: '20m', positive: 70, neutral: 20, negative: 10 },
+      { time: '30m', positive: 60, neutral: 25, negative: 15 },
+      { time: '40m', positive: 80, neutral: 15, negative: 5 },
+      { time: '50m', positive: 85, neutral: 10, negative: 5 },
+    ],
+    engagementScore: 89,
+    topics: [
+      { name: 'Q3 Deliverables', count: 15, importance: 'high' },
+      { name: 'Resource Allocation', count: 12, importance: 'high' },
+      { name: 'Client Feedback', count: 9, importance: 'medium' },
+      { name: 'Timeline Buffer', count: 7, importance: 'medium' },
+      { name: 'Marketing Launch', count: 5, importance: 'low' },
+    ],
+    insights: [
+      { title: 'Timeline Conflict Resolved', desc: 'Sarah and David resolved the resource conflict for Q3 front-end deliverables around minute 35.', type: 'info' },
+      { title: 'Action Item Abundance', desc: '14 new action items were created. Ensure owners are assigned on the Kanban board.', type: 'warning' }
+    ]
+  },
+  security: {
+    id: 'security',
+    title: 'Security Audit & Supabase Setup',
+    date: 'June 28, 2026',
+    totalMeetings: 1,
+    totalMeetingsTrend: 'Specialist Session',
+    totalMeetingsTrendDirection: 'down',
+    totalDuration: '45 mins',
+    totalDurationTrend: 'Extended 15 mins',
+    totalDurationTrendDirection: 'up',
+    avgSentiment: 72,
+    avgSentimentTrend: 'Critical issues flagged',
+    avgSentimentTrendDirection: 'down',
+    efficiencyScore: 75,
+    efficiencyScoreTrend: 'Ad-hoc troubleshooting',
+    efficiencyScoreTrendDirection: 'down',
+    weeklyFrequency: [
+      { height: 40, label: 'Audit 1', count: 1 },
+      { height: 90, label: 'Audit 2', count: 1 },
+      { height: 120, label: 'Audit 3', count: 1 },
+      { height: 70, label: 'Audit 4', count: 1 },
+    ],
+    productivityTrends: [
+      { x: 0, y: 170, label: 'Phase 1' },
+      { x: 100, y: 150, label: 'Phase 2' },
+      { x: 200, y: 110, label: 'Phase 3' },
+      { x: 300, y: 140, label: 'Phase 4' },
+      { x: 400, y: 80, label: 'Phase 5' },
+    ],
+    speakers: [
+      { name: 'David Chen (Host)', talkTime: 1210, percentage: 45, color: '#F95335', interruptions: 14, clarity: 80 },
+      { name: 'Alex Johnson', talkTime: 950, percentage: 35, color: '#50A3A4', interruptions: 6, clarity: 94 },
+      { name: 'System / AI Agent', talkTime: 540, percentage: 20, color: '#674A40', interruptions: 1, clarity: 98 },
+    ],
+    sentimentFlow: [
+      { time: '0m', positive: 50, neutral: 45, negative: 5 },
+      { time: '10m', positive: 55, neutral: 35, negative: 10 },
+      { time: '20m', positive: 45, neutral: 30, negative: 25 },
+      { time: '30m', positive: 60, neutral: 25, negative: 15 },
+      { time: '40m', positive: 70, neutral: 20, negative: 10 },
+    ],
+    engagementScore: 91,
+    topics: [
+      { name: 'Supabase RLS Policies', count: 22, importance: 'high' },
+      { name: 'Auth Leak Prevention', count: 18, importance: 'high' },
+      { name: 'CORS Configuration', count: 11, importance: 'medium' },
+      { name: 'SSL Certificate Renewal', count: 6, importance: 'low' },
+    ],
+    insights: [
+      { title: 'RLS Policies Missing', desc: 'David identified 3 tables in Supabase missing Row Level Security policies. Critical fix assigned.', type: 'warning' },
+      { title: 'High Background Noise', desc: 'David Chen had minor microphone static/noise levels throughout the first 15 minutes of the session.', type: 'warning' }
+    ]
+  }
+};
+
 export default function App() {
   // Authentication State
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -345,6 +596,10 @@ export default function App() {
   // Navigation State
   const [currentTab, setCurrentTab] = useState<string>('dashboard'); // 'dashboard', 'meeting', 'kanban', 'analytics', 'history', 'recordings'
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState<boolean>(false);
+
+  // AI Analytics States
+  const [selectedMeetingAnalytics, setSelectedMeetingAnalytics] = useState<string>('all');
+  const [activeAnalyticsTab, setActiveAnalyticsTab] = useState<string>('overview');
 
   useEffect(() => {
     setMobileSidebarOpen(false);
@@ -1068,7 +1323,7 @@ export default function App() {
   // Premium feature locked view generator
   const renderLockedFeaturePlaceholder = (featureName: string, description: string) => {
     return (
-      <div className="dashboard-card col-12 3d-effect text-center" style={{
+      <div className="dashboard-card col-12 effect-3d text-center" style={{
         padding: '4rem 2rem',
         maxWidth: '600px',
         margin: '4rem auto',
@@ -1108,7 +1363,7 @@ export default function App() {
         </div>
         <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
           <button 
-            className="btn btn-secondary 3d-button" 
+            className="btn btn-secondary button-3d" 
             onClick={() => {
               setIsRegisterMode(false);
               setShowAuthModal(true);
@@ -1117,7 +1372,7 @@ export default function App() {
             Log In
           </button>
           <button 
-            className="btn btn-primary 3d-button" 
+            className="btn btn-primary button-3d" 
             onClick={() => {
               setIsRegisterMode(true);
               setShowAuthModal(true);
@@ -2482,7 +2737,7 @@ export default function App() {
 
     return (
       <div className="modal-overlay" style={{ zIndex: 2000 }}>
-        <div className="modal-content 3d-effect" style={{ maxWidth: '420px', padding: '2.5rem', position: 'relative' }}>
+        <div className="modal-content effect-3d" style={{ maxWidth: '420px', padding: '2.5rem', position: 'relative' }}>
           <button 
             className="btn btn-secondary" 
             style={{ position: 'absolute', top: '15px', right: '15px', padding: '0.25rem 0.5rem', minWidth: 'auto' }} 
@@ -2669,7 +2924,7 @@ export default function App() {
         {/* Supabase Key Settings Modal */}
         {showSupaConfig && (
           <div className="modal-overlay" style={{ zIndex: 9999 }}>
-            <div className="modal-content 3d-effect" style={{ maxWidth: '500px' }}>
+            <div className="modal-content effect-3d" style={{ maxWidth: '500px' }}>
               <div className="modal-header">
                 <h3>Supabase Connection Settings</h3>
               </div>
@@ -2703,7 +2958,7 @@ export default function App() {
               <div className="modal-footer">
                 {isSupabaseConfigured() && (
                   <button 
-                    className="btn btn-danger 3d-button mr-auto" 
+                    className="btn btn-danger button-3d mr-auto" 
                     onClick={() => {
                       clearSupabaseKeys();
                       setShowSupaConfig(false);
@@ -2712,9 +2967,9 @@ export default function App() {
                     Disconnect Supabase
                   </button>
                 )}
-                <button className="btn btn-secondary 3d-button" onClick={() => setShowSupaConfig(false)}>Cancel</button>
+                <button className="btn btn-secondary button-3d" onClick={() => setShowSupaConfig(false)}>Cancel</button>
                 <button 
-                  className="btn btn-primary 3d-button" 
+                  className="btn btn-primary button-3d" 
                   onClick={() => {
                     saveSupabaseKeys(supaUrlInput, supaKeyInput);
                     setShowSupaConfig(false);
@@ -2864,7 +3119,7 @@ export default function App() {
           
           {/* Dropdown Menu */}
           {showAccountMenu && (
-            <div className="account-dropdown 3d-effect" style={{
+            <div className="account-dropdown effect-3d" style={{
               position: 'absolute',
               bottom: '100%',
               left: '10px',
@@ -2905,14 +3160,14 @@ export default function App() {
 
               {!isAuthenticated ? (
                 <>
-                  <button className="btn btn-primary btn-sm 3d-button" style={{ justifyContent: 'center' }} onClick={() => {
+                  <button className="btn btn-primary btn-sm button-3d" style={{ justifyContent: 'center' }} onClick={() => {
                     setIsRegisterMode(false);
                     setShowAuthModal(true);
                     setShowAccountMenu(false);
                   }}>
                     Log In
                   </button>
-                  <button className="btn btn-secondary btn-sm 3d-button" style={{ justifyContent: 'center' }} onClick={() => {
+                  <button className="btn btn-secondary btn-sm button-3d" style={{ justifyContent: 'center' }} onClick={() => {
                     setIsRegisterMode(true);
                     setShowAuthModal(true);
                     setShowAccountMenu(false);
@@ -2925,7 +3180,7 @@ export default function App() {
                   <div style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', borderBottom: '1px solid var(--color-border)', marginBottom: '0.25rem' }}>
                     Signed in as: <b>{email}</b>
                   </div>
-                  <button className="btn btn-danger btn-sm 3d-button" style={{ display: 'flex', gap: '0.5rem', width: '100%', justifyContent: 'center' }} onClick={() => {
+                  <button className="btn btn-danger btn-sm button-3d" style={{ display: 'flex', gap: '0.5rem', width: '100%', justifyContent: 'center' }} onClick={() => {
                     handleLogout();
                     setShowAccountMenu(false);
                   }}>
@@ -2970,13 +3225,13 @@ export default function App() {
                 <h1 className="workspace-title">{isAuthenticated ? `Welcome Back, ${username}!` : 'Welcome to IntellMeet!'}</h1>
               </div>
               <div className="flex gap-2">
-                <button className="btn btn-secondary 3d-button" onClick={() => setShowScheduleModal(true)}>Schedule Meeting</button>
-                <button className="btn btn-primary 3d-button" onClick={() => setShowJoinSetupModal(true)}>Start Instant Meeting</button>
+                <button className="btn btn-secondary button-3d" onClick={() => setShowScheduleModal(true)}>Schedule Meeting</button>
+                <button className="btn btn-primary button-3d" onClick={() => setShowJoinSetupModal(true)}>Start Instant Meeting</button>
               </div>
             </div>
 
             {/* Join Meeting card for guests or anyone */}
-            <div className="dashboard-card col-12 3d-effect mb-4" style={{
+            <div className="dashboard-card col-12 effect-3d mb-4" style={{
               background: 'linear-gradient(135deg, var(--bg-primary) 0%, #eff6ff 100%)',
               border: '2px solid var(--color-primary)'
             }}>
@@ -2996,7 +3251,7 @@ export default function App() {
                   <label className="form-label">Meeting ID or Link</label>
                   <input 
                     type="text" 
-                    className="form-input 3d-effect" 
+                    className="form-input effect-3d" 
                     placeholder="e.g. MEET-XXXX-XXXX or paste Join Link" 
                     value={joinMeetIdInput}
                     onChange={(e) => setJoinMeetIdInput(e.target.value)}
@@ -3006,7 +3261,7 @@ export default function App() {
                   <label className="form-label">Passcode</label>
                   <input 
                     type="password" 
-                    className="form-input 3d-effect" 
+                    className="form-input effect-3d" 
                     placeholder="e.g. 123456" 
                     value={joinMeetPassInput}
                     onChange={(e) => setJoinMeetPassInput(e.target.value)}
@@ -3017,7 +3272,7 @@ export default function App() {
                     <label className="form-label">Your Display Name</label>
                     <input 
                       type="text" 
-                      className="form-input 3d-effect" 
+                      className="form-input effect-3d" 
                       placeholder="Enter name to display" 
                       value={guestDisplayName}
                       onChange={(e) => setGuestDisplayName(e.target.value)}
@@ -3025,7 +3280,7 @@ export default function App() {
                   </div>
                 )}
                 <button 
-                  className="btn btn-primary 3d-button" 
+                  className="btn btn-primary button-3d" 
                   style={{ height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   onClick={handleJoinMeetingFromCard}
                 >
@@ -3043,7 +3298,7 @@ export default function App() {
               m.invitedEmails?.includes(email.trim().toLowerCase() || 'admin@zidio.com') && 
               m.responses?.[email.trim().toLowerCase() || 'admin@zidio.com'] === 'pending'
             ).length > 0 && (
-              <div className="dashboard-card col-12 3d-effect mb-4" style={{ borderLeft: '4px solid var(--color-primary)', backgroundColor: '#f0f9ff' }}>
+              <div className="dashboard-card col-12 effect-3d mb-4" style={{ borderLeft: '4px solid var(--color-primary)', backgroundColor: '#f0f9ff' }}>
                 <h3 className="card-title" style={{ color: 'var(--color-primary)' }}>📩 Pending Meeting Invitations</h3>
                 <div className="meeting-list">
                   {scheduledMeetings.filter(m => 
@@ -3064,10 +3319,10 @@ export default function App() {
                         </div>
                       </div>
                       <div className="flex gap-2">
-                        <button className="btn btn-primary 3d-button" onClick={() => handleAcceptInvitation(meet.id)} style={{ backgroundColor: 'var(--color-success)' }}>
+                        <button className="btn btn-primary button-3d" onClick={() => handleAcceptInvitation(meet.id)} style={{ backgroundColor: 'var(--color-success)' }}>
                           Accept
                         </button>
-                        <button className="btn btn-danger 3d-button" onClick={() => handleDeclineInvitation(meet.id)}>
+                        <button className="btn btn-danger button-3d" onClick={() => handleDeclineInvitation(meet.id)}>
                           Decline
                         </button>
                       </div>
@@ -3078,7 +3333,7 @@ export default function App() {
             )}
 
             {/* Scheduled Meetings full-width block */}
-            <div className="dashboard-card col-12 3d-effect mb-4">
+            <div className="dashboard-card col-12 effect-3d mb-4">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h3 className="card-title" style={{ margin: 0 }}>📅 Scheduled Meetings</h3>
                 <span className="badge badge-primary">{scheduledMeetings.filter(m => !m.isHostJoined && !m.isExpired).length} Scheduled</span>
@@ -3125,7 +3380,7 @@ export default function App() {
                           ) : (
                             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                               <button 
-                                className={`btn 3d-button ${isEnabled ? 'btn-primary' : 'btn-secondary'}`}
+                                className={`btn button-3d ${isEnabled ? 'btn-primary' : 'btn-secondary'}`}
                                 disabled={!isEnabled}
                                 onClick={() => {
                                   setMeetingTitle(meet.title);
@@ -3141,7 +3396,7 @@ export default function App() {
                                 Join Room
                               </button>
                               <button 
-                                className="btn btn-danger 3d-button"
+                                className="btn btn-danger button-3d"
                                 onClick={() => handleDeleteScheduledMeeting(meet.id)}
                               >
                                 Delete
@@ -3162,7 +3417,7 @@ export default function App() {
 
             <div className="dashboard-grid">
               {/* Active Meetings List */}
-              <div className="dashboard-card col-12 3d-effect">
+              <div className="dashboard-card col-12 effect-3d">
                 <h3 className="card-title">🚀 Active Meetings</h3>
                 <div className="meeting-list">
                   {getActiveMeetings().length > 0 ? (
@@ -3179,7 +3434,7 @@ export default function App() {
                         </div>
                         <div>
                           <span className="badge badge-green mr-4">Live</span>
-                          <button className="btn btn-primary 3d-button" onClick={() => {
+                          <button className="btn btn-primary button-3d" onClick={() => {
                             setMeetingTitle(meet.title);
                             setMeetingId(meet.id);
                             setActiveMeetingPasscode(meet.password || '');
@@ -3202,7 +3457,7 @@ export default function App() {
 
               {/* Session Activity Log Widget */}
               {isAuthenticated && (
-                <div className="dashboard-card col-12 3d-effect">
+                <div className="dashboard-card col-12 effect-3d">
                   <h3 className="card-title">📋 Session Activity Log</h3>
                   <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '1.25rem' }}>
                     Track login and logout cycles for team auditing.
@@ -3255,7 +3510,7 @@ export default function App() {
 
               {/* 📬 Outgoing Mail & Notification Logs */}
               {isAuthenticated && (
-                <div className="dashboard-card col-12 3d-effect">
+                <div className="dashboard-card col-12 effect-3d">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
                     <div>
                       <h3 className="card-title" style={{ margin: 0 }}>📬 Outgoing Mail & Notification Logs</h3>
@@ -3265,7 +3520,7 @@ export default function App() {
                     </div>
                     {userEmailLogs.length > 0 && (
                       <button 
-                        className="btn btn-secondary 3d-button" 
+                        className="btn btn-secondary button-3d" 
                         onClick={() => {
                           localStorage.removeItem('intellmeet_emaillogs');
                           setEmailLogs([]);
@@ -3330,17 +3585,17 @@ export default function App() {
                   <span><b>Join Link:</b> <a href={`http://localhost:3000/join/${meetingId}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>http://localhost:3000/join/{meetingId}</a></span>
                 </div>
               </div>
-              <button className="btn btn-danger 3d-button" onClick={endMeeting}>Leave & Generate Summary</button>
+              <button className="btn btn-danger button-3d" onClick={endMeeting}>Leave & Generate Summary</button>
             </div>
 
             <div className="meeting-room-container" style={{ display: 'flex', gap: '1rem', flex: 1, minHeight: 0 }}>
               {/* Left Video Area: Grid */}
-              <div className="video-section 3d-effect" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              <div className="video-section effect-3d" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 {isScreenSharing ? (
                   /* Screen Share Presenter Layout */
                   <div style={{ display: 'flex', flex: 1, gap: '1rem', height: '100%', minHeight: 0, padding: '0.5rem' }}>
                     {/* Central Large Presentation Area */}
-                    <div className="3d-effect" style={{ 
+                    <div className="effect-3d" style={{ 
                       flex: 3.5, 
                       backgroundColor: '#0f172a', 
                       borderRadius: '12px', 
@@ -3393,7 +3648,7 @@ export default function App() {
                       maxWidth: '220px'
                     }}>
                       {/* Host Camera card (in compact form) */}
-                      <div className="video-feed 3d-effect" style={{ height: '120px', minHeight: '120px', margin: 0, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <div className="video-feed effect-3d" style={{ height: '120px', minHeight: '120px', margin: 0, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <div className="user-avatar" style={{ width: '50px', height: '50px', background: 'transparent' }}>
                           {renderUserAvatar({ width: '50px', height: '50px' })}
                         </div>
@@ -3402,7 +3657,7 @@ export default function App() {
 
                       {/* Remote Participants */}
                       {meetingParticipants.map((p) => (
-                        <div key={p.userId || p.socketId} className={`video-feed ${!p.isMuted ? 'active-speaker' : ''} 3d-effect`} style={{ height: '120px', minHeight: '120px', margin: 0 }}>
+                        <div key={p.userId || p.socketId} className={`video-feed ${!p.isMuted ? 'active-speaker' : ''} effect-3d`} style={{ height: '120px', minHeight: '120px', margin: 0 }}>
                           {p.isCamOff ? (
                             <div className="user-avatar" style={{ width: '45px', height: '45px', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                               <div style={{ width: '45px', height: '45px' }}>
@@ -3424,7 +3679,7 @@ export default function App() {
                   /* Standard Grid Layout when no one is sharing */
                   <div className="video-grid">
                     {/* Local User (You) */}
-                    <div className={`video-feed ${!isMuted ? 'active-speaker' : ''} 3d-effect`}>
+                    <div className={`video-feed ${!isMuted ? 'active-speaker' : ''} effect-3d`}>
                       {isCamOff ? (
                         <div className="user-avatar" style={{ width: '80px', height: '80px', background: 'transparent' }}>
                           {renderUserAvatar({ width: '80px', height: '80px' })}
@@ -3451,7 +3706,7 @@ export default function App() {
 
                     {/* Real Remote Participants */}
                     {meetingParticipants.map((p) => (
-                      <div key={p.userId || p.socketId} className={`video-feed ${!p.isMuted ? 'active-speaker' : ''} 3d-effect`}>
+                      <div key={p.userId || p.socketId} className={`video-feed ${!p.isMuted ? 'active-speaker' : ''} effect-3d`}>
                         {p.isCamOff ? (
                           <div className="user-avatar" style={{ width: '80px', height: '80px', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <div style={{ width: '80px', height: '80px' }}>
@@ -3514,7 +3769,7 @@ export default function App() {
               </div>
 
               {/* Right Side Info */}
-              <div className="transcript-box 3d-effect">
+              <div className="transcript-box effect-3d">
                 <div className="tab-nav">
                   <button 
                     className={`tab-btn ${activeRightTab === 'transcript' ? 'active' : ''}`}
@@ -3553,7 +3808,7 @@ export default function App() {
                     <div style={{display: 'flex', flexDirection: 'column', gap: '0.75rem'}}>
                       <p style={{fontSize: '0.75rem', color: 'var(--text-muted)'}}>🤖 Real-time AI transcription active (&gt;85% accuracy)...</p>
                       {transcript.map(msg => (
-                        <div key={msg.id} className="message-bubble 3d-effect">
+                        <div key={msg.id} className="message-bubble effect-3d">
                           <div className="message-speaker">{msg.speaker} <span style={{fontSize: '0.65rem', color: 'var(--text-muted)'}}>{msg.time}</span></div>
                           <div className="message-text">{msg.text}</div>
                         </div>
@@ -3602,7 +3857,7 @@ export default function App() {
                         {chatMessages.filter(msg => !msg.recipient || msg.recipient === 'Everyone' || msg.recipient === username || msg.sender === username).map(msg => {
                           const isPrivate = msg.recipient && msg.recipient !== 'Everyone';
                           return (
-                            <div key={msg.id} className="message-bubble 3d-effect" style={{
+                            <div key={msg.id} className="message-bubble effect-3d" style={{
                               alignSelf: msg.sender === username ? 'flex-end' : 'flex-start', 
                               backgroundColor: isPrivate ? '#fef2f2' : (msg.sender === username ? '#f0fdf4' : ''),
                               border: isPrivate ? '1px dashed var(--color-danger)' : 'none',
@@ -3672,13 +3927,13 @@ export default function App() {
                       <div className="input-with-send" style={{ marginTop: 0 }}>
                         <input 
                           type="text" 
-                          className="form-input 3d-effect" 
+                          className="form-input effect-3d" 
                           value={chatInput} 
                           onChange={(e) => setChatInput(e.target.value)} 
                           onKeyDown={(e) => e.key === 'Enter' && handleSendChat()}
                           placeholder="Send message..."
                         />
-                        <button className="btn btn-primary 3d-button" onClick={handleSendChat} style={{padding: '0.5rem'}}><Send size={16}/></button>
+                        <button className="btn btn-primary button-3d" onClick={handleSendChat} style={{padding: '0.5rem'}}><Send size={16}/></button>
                       </div>
                     </div>
                   )}
@@ -3686,7 +3941,7 @@ export default function App() {
                   {activeRightTab === 'notes' && (
                     <div style={{height: '100%', display: 'flex', flexDirection: 'column'}}>
                       <textarea 
-                        className="shared-notes-area 3d-effect"
+                        className="shared-notes-area effect-3d"
                         value={sharedNotes}
                         onChange={(e) => setSharedNotes(e.target.value)}
                         placeholder="Type collaborative notes here..."
@@ -3697,7 +3952,7 @@ export default function App() {
                   {activeRightTab === 'actions' && (
                     <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
                       {meetingActions.map((act, index) => (
-                        <div key={index} className="action-item-card 3d-effect">
+                        <div key={index} className="action-item-card effect-3d">
                           <div>{act}</div>
                         </div>
                       ))}
@@ -3711,7 +3966,7 @@ export default function App() {
                         <label className="form-label">Task Title</label>
                         <input 
                           type="text" 
-                          className="form-input 3d-effect" 
+                          className="form-input effect-3d" 
                           value={actionTitleInput} 
                           onChange={(e) => setActionTitleInput(e.target.value)} 
                           placeholder="e.g. Test loopback API"
@@ -3721,7 +3976,7 @@ export default function App() {
                       <div className="form-group">
                         <label className="form-label">Task Description</label>
                         <textarea 
-                          className="form-input 3d-effect" 
+                          className="form-input effect-3d" 
                           style={{ minHeight: '60px', padding: '0.5rem', resize: 'vertical' }}
                           value={actionDescriptionInput} 
                           onChange={(e) => setActionDescriptionInput(e.target.value)} 
@@ -3732,7 +3987,7 @@ export default function App() {
                       <div className="form-group">
                         <label className="form-label">Assignee</label>
                         <select 
-                          className="form-input 3d-effect" 
+                          className="form-input effect-3d" 
                           value={actionAssigneeInput}
                           onChange={(e) => setActionAssigneeInput(e.target.value)}
                         >
@@ -3747,7 +4002,7 @@ export default function App() {
                       <div className="form-group">
                         <label className="form-label">Task Expiry / Timeline</label>
                         <select 
-                          className="form-input 3d-effect" 
+                          className="form-input effect-3d" 
                           value={actionTimelineInput}
                           onChange={(e) => setActionTimelineInput(e.target.value)}
                         >
@@ -3758,7 +4013,7 @@ export default function App() {
                         </select>
                       </div>
 
-                      <button className="btn btn-primary w-full 3d-button" onClick={handleAddActionItem}>
+                      <button className="btn btn-primary w-full button-3d" onClick={handleAddActionItem}>
                         <Plus size={16} /> Post Task
                       </button>
                     </div>
@@ -3772,7 +4027,7 @@ export default function App() {
                       
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                         {/* Host */}
-                        <div className="3d-effect" style={{
+                        <div className="effect-3d" style={{
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
@@ -3798,7 +4053,7 @@ export default function App() {
 
                         {/* Remote Members */}
                         {meetingParticipants.map(p => (
-                          <div key={p.userId || p.socketId} className="3d-effect" style={{
+                          <div key={p.userId || p.socketId} className="effect-3d" style={{
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'space-between',
@@ -3846,14 +4101,14 @@ export default function App() {
 
             <div className="kanban-grid">
               {['todo', 'in_progress', 'done', 'review'].map(statusKey => (
-                <div key={statusKey} className="kanban-column 3d-effect">
+                <div key={statusKey} className="kanban-column effect-3d">
                   <div className="kanban-column-header">
                     <span className="column-title" style={{textTransform: 'uppercase'}}>{statusKey.replace('_', ' ')}</span>
                     <span className="column-count">{tasks.filter(t => t.status === statusKey).length}</span>
                   </div>
                   <div className="kanban-cards">
                     {tasks.filter(t => t.status === statusKey).map(t => (
-                      <div key={t.id} className="kanban-card 3d-effect">
+                      <div key={t.id} className="kanban-card effect-3d">
                         <h4 className="kanban-card-title">{t.title}</h4>
                         <p className="kanban-card-desc">{t.description}</p>
                         <div className="kanban-card-footer">
@@ -3868,7 +4123,7 @@ export default function App() {
                               Review Notes / Feedback:
                             </label>
                             <textarea
-                              className="form-input 3d-effect"
+                              className="form-input effect-3d"
                               style={{ 
                                 width: '100%', 
                                 minHeight: '60px', 
@@ -3891,7 +4146,7 @@ export default function App() {
                           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.75rem', borderTop: '1px solid var(--color-border)', paddingTop: '0.75rem' }}>
                             {t.status === 'todo' && (
                               <button 
-                                className="btn btn-warning btn-sm 3d-button" 
+                                className="btn btn-warning btn-sm button-3d" 
                                 onClick={(e) => { e.stopPropagation(); handlePendingClick(t); }}
                               >
                                 Pending
@@ -3900,13 +4155,13 @@ export default function App() {
                             {t.status === 'in_progress' && (
                               <>
                                 <button 
-                                  className="btn btn-danger btn-sm 3d-button" 
+                                  className="btn btn-danger btn-sm button-3d" 
                                   onClick={(e) => { e.stopPropagation(); handleBackToTodoClick(t); }}
                                 >
                                   Back
                                 </button>
                                 <button 
-                                  className="btn btn-primary btn-sm 3d-button" 
+                                  className="btn btn-primary btn-sm button-3d" 
                                   onClick={(e) => { e.stopPropagation(); handleOngoingClick(t); }}
                                 >
                                   Ongoing
@@ -3916,13 +4171,13 @@ export default function App() {
                             {t.status === 'done' && (
                               <>
                                 <button 
-                                  className="btn btn-secondary btn-sm 3d-button" 
+                                  className="btn btn-secondary btn-sm button-3d" 
                                   onClick={(e) => { e.stopPropagation(); handleBackToProgressClick(t); }}
                                 >
                                   Back
                                 </button>
                                 <button 
-                                  className="btn btn-success btn-sm 3d-button" 
+                                  className="btn btn-success btn-sm button-3d" 
                                   onClick={(e) => { e.stopPropagation(); handleCompletedClick(t); }}
                                 >
                                   Completed
@@ -3945,51 +4200,436 @@ export default function App() {
             AI ANALYTICS VIEW
             ========================================== */}
         {currentTab === 'analytics' && (
-          !isAuthenticated ? renderLockedFeaturePlaceholder("AI Analytics & Insights", "Get advanced productivity analytics, sentiment trends, speaker talk-time distribution, and AI-driven efficiency reports for all your workspace meetings.") : (
-          <div>
-            <div className="workspace-header">
-              <div>
-                <h1 className="workspace-title">📈 AI Analytics & Insights</h1>
-                <p style={{color: 'var(--text-secondary)'}}>Zidio Workspace productivity reports</p>
-              </div>
-            </div>
+          !isAuthenticated ? renderLockedFeaturePlaceholder("AI Analytics & Insights", "Get advanced productivity analytics, sentiment trends, speaker talk-time distribution, and AI-driven efficiency reports for all your workspace meetings.") : (() => {
+            const selectedData = MOCK_ANALYTICS_DATA[selectedMeetingAnalytics] || MOCK_ANALYTICS_DATA.all;
+            
+            // Math for Spline productivity curve
+            const prodPoints = selectedData.productivityTrends;
+            const prodWidth = 400;
+            const prodHeight = 180;
+            const prodX = (idx: number) => idx * (prodWidth / (prodPoints.length - 1));
+            const prodPath = prodPoints.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${prodX(idx)} ${p.y}`).join(' ');
+            const prodArea = `${prodPath} L ${prodWidth} ${prodHeight} L 0 ${prodHeight} Z`;
 
-            <div className="dashboard-grid">
-              <div className="dashboard-card col-6 3d-effect">
-                <h3 className="card-title">Meeting Frequency (per week)</h3>
-                <div style={{height: '240px', display: 'flex', alignItems: 'flex-end', gap: '1rem', padding: '1rem 0'}}>
-                  {[120, 160, 90, 180].map((h, i) => (
-                    <div key={i} style={{display: 'flex', flexDirection: 'column', alignItems: 'center', flexGrow: 1}}>
-                      <div className="3d-effect" style={{width: '40px', height: `${h}px`, backgroundColor: 'var(--color-primary)', borderRadius: '6px 6px 0 0'}}></div>
-                      <span style={{fontSize: '0.75rem', marginTop: '0.5rem'}}>Wk {i+1}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            // Math for Sentiment Flow
+            const flow = selectedData.sentimentFlow;
+            const flowWidth = 500;
+            const flowHeight = 180;
+            const flowX = (idx: number) => idx * (flowWidth / (flow.length - 1));
+            const flowY = (val: number) => flowHeight - (val / 100) * flowHeight;
+            const flowPosPath = flow.map((f, idx) => `${idx === 0 ? 'M' : 'L'} ${flowX(idx)} ${flowY(f.positive)}`).join(' ');
+            const flowNeuPath = flow.map((f, idx) => `${idx === 0 ? 'M' : 'L'} ${flowX(idx)} ${flowY(f.neutral)}`).join(' ');
+            const flowNegPath = flow.map((f, idx) => `${idx === 0 ? 'M' : 'L'} ${flowX(idx)} ${flowY(f.negative)}`).join(' ');
 
-              <div className="dashboard-card col-6 3d-effect">
-                <h3 className="card-title">Productivity Score Trends</h3>
-                <div style={{height: '240px', position: 'relative', borderBottom: '2px solid var(--color-border)', borderLeft: '2px solid var(--color-border)', margin: '1rem 0'}}>
-                  <svg style={{width: '100%', height: '100%', overflow: 'visible'}}>
-                    <path d="M 0 180 L 100 120 L 200 140 L 300 80 L 400 40 L 400 240 L 0 240 Z" fill="rgba(2, 132, 199, 0.1)" />
-                    <path d="M 0 180 L 100 120 L 200 140 L 300 80 L 400 40" fill="none" stroke="var(--color-primary)" strokeWidth="3" />
-                    {[0, 100, 200, 300, 400].map((x, idx) => {
-                      const yList = [180, 120, 140, 80, 40];
-                      return <circle key={idx} cx={x} cy={yList[idx]} r="6" fill="#0f172a" stroke="white" strokeWidth="2" className="3d-effect" />;
-                    })}
-                  </svg>
-                  <div style={{display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0'}}>
-                    <span>Sprint 1</span>
-                    <span>Sprint 2</span>
-                    <span>Sprint 3</span>
-                    <span>Sprint 4</span>
-                    <span>Sprint 5</span>
+            return (
+              <div className="analytics-container animate-fade-in">
+                {/* Header */}
+                <div className="analytics-header">
+                  <div>
+                    <h1 className="workspace-title">📈 AI Analytics & Insights</h1>
+                    <p style={{ color: 'var(--text-secondary)' }}>Zidio Workspace productivity reports • {selectedData.date}</p>
+                  </div>
+                  
+                  <div className="meeting-select-wrapper">
+                    <span className="meeting-select-label">Select Meeting Profile:</span>
+                    <select 
+                      className="meeting-select"
+                      value={selectedMeetingAnalytics}
+                      onChange={(e) => setSelectedMeetingAnalytics(e.target.value)}
+                    >
+                      <option value="all">📅 All Workspace Meetings (30d)</option>
+                      <option value="daily">⏱️ Sprint 5 Daily Scrum</option>
+                      <option value="roadmap">🎯 Product Roadmap Planning</option>
+                      <option value="security">🔒 Security Audit & Supabase Setup</option>
+                    </select>
                   </div>
                 </div>
+
+                {/* KPI Grid */}
+                <div className="kpi-grid">
+                  {/* Total Meetings */}
+                  <div className="kpi-card">
+                    <div className="kpi-icon-box primary">
+                      <Calendar size={22} />
+                    </div>
+                    <div className="kpi-info">
+                      <span className="kpi-title">Meetings</span>
+                      <span className="kpi-value">{selectedData.totalMeetings}</span>
+                      <div className={`kpi-badge ${selectedData.totalMeetingsTrendDirection === 'up' ? 'positive' : 'negative'}`}>
+                        {selectedData.totalMeetingsTrendDirection === 'up' ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                        <span>{selectedData.totalMeetingsTrend}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Total Talk-Time */}
+                  <div className="kpi-card">
+                    <div className="kpi-icon-box accent">
+                      <Clock size={22} />
+                    </div>
+                    <div className="kpi-info">
+                      <span className="kpi-title">Talk Time / Duration</span>
+                      <span className="kpi-value">{selectedData.totalDuration}</span>
+                      <div className={`kpi-badge ${selectedData.totalDurationTrendDirection === 'up' ? 'positive' : 'negative'}`}>
+                        {selectedData.totalDurationTrendDirection === 'up' ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                        <span>{selectedData.totalDurationTrend}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Average Sentiment */}
+                  <div className="kpi-card">
+                    <div className="kpi-icon-box success">
+                      <Smile size={22} />
+                    </div>
+                    <div className="kpi-info">
+                      <span className="kpi-title">Avg. Sentiment</span>
+                      <span className="kpi-value">{selectedData.avgSentiment}%</span>
+                      <div className={`kpi-badge ${selectedData.avgSentimentTrendDirection === 'up' ? 'positive' : 'negative'}`}>
+                        {selectedData.avgSentimentTrendDirection === 'up' ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                        <span>{selectedData.avgSentimentTrend}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Meeting Efficiency */}
+                  <div className="kpi-card">
+                    <div className="kpi-icon-box danger">
+                      <Sparkles size={22} />
+                    </div>
+                    <div className="kpi-info">
+                      <span className="kpi-title">Efficiency Score</span>
+                      <span className="kpi-value">{selectedData.efficiencyScore}/100</span>
+                      <div className={`kpi-badge ${selectedData.efficiencyScoreTrendDirection === 'up' ? 'positive' : 'negative'}`}>
+                        {selectedData.efficiencyScoreTrendDirection === 'up' ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                        <span>{selectedData.efficiencyScoreTrend}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sub Tabs */}
+                <div className="analytics-tabs">
+                  <button 
+                    className={`analytics-tab-btn ${activeAnalyticsTab === 'overview' ? 'active' : ''}`}
+                    onClick={() => setActiveAnalyticsTab('overview')}
+                  >
+                    <BarChart3 size={16} />
+                    <span>Overview</span>
+                  </button>
+                  <button 
+                    className={`analytics-tab-btn ${activeAnalyticsTab === 'speakers' ? 'active' : ''}`}
+                    onClick={() => setActiveAnalyticsTab('speakers')}
+                  >
+                    <Users size={16} />
+                    <span>Speaker Insights</span>
+                  </button>
+                  <button 
+                    className={`analytics-tab-btn ${activeAnalyticsTab === 'sentiment' ? 'active' : ''}`}
+                    onClick={() => setActiveAnalyticsTab('sentiment')}
+                  >
+                    <Smile size={16} />
+                    <span>Sentiment & Engagement</span>
+                  </button>
+                  <button 
+                    className={`analytics-tab-btn ${activeAnalyticsTab === 'topics' ? 'active' : ''}`}
+                    onClick={() => setActiveAnalyticsTab('topics')}
+                  >
+                    <Sparkles size={16} />
+                    <span>AI Topics & Insights</span>
+                  </button>
+                </div>
+
+                {/* Tab Panels */}
+                <div className="analytics-panel-grid">
+                  
+                  {/* OVERVIEW TAB */}
+                  {activeAnalyticsTab === 'overview' && (
+                    <>
+                      <div className="dashboard-card grid-col-6 effect-3d">
+                        <h3 className="card-title">Meeting Frequency & Load</h3>
+                        <div style={{ height: '240px', display: 'flex', alignItems: 'flex-end', gap: '1rem', padding: '1rem 0' }}>
+                          {selectedData.weeklyFrequency.map((item, i) => (
+                            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexGrow: 1 }}>
+                              <div 
+                                className="effect-3d" 
+                                style={{ 
+                                  width: '40px', 
+                                  height: `${item.height}px`, 
+                                  backgroundColor: 'var(--color-primary)', 
+                                  borderRadius: '6px 6px 0 0',
+                                  transition: 'height 0.3s ease'
+                                }}
+                                title={`${item.count} meetings`}
+                              ></div>
+                              <span style={{ fontSize: '0.75rem', marginTop: '0.5rem', fontWeight: 500 }}>{item.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="dashboard-card grid-col-6 effect-3d">
+                        <h3 className="card-title">Productivity Score Trends</h3>
+                        <div style={{ height: '240px', position: 'relative', borderBottom: '2px solid var(--color-border)', borderLeft: '2px solid var(--color-border)', margin: '1rem 0', padding: '10px 10px 0 10px' }}>
+                          <svg viewBox="0 0 400 180" style={{ width: '100%', height: '100%', overflow: 'visible' }} preserveAspectRatio="none">
+                            <defs>
+                              <linearGradient id="prodGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.25"/>
+                                <stop offset="100%" stopColor="var(--primary)" stopOpacity="0.0"/>
+                              </linearGradient>
+                            </defs>
+                            <path d={prodArea} fill="url(#prodGrad)" />
+                            <path d={prodPath} fill="none" stroke="var(--primary)" strokeWidth="3" style={{ transition: 'd 0.3s ease' }} />
+                            {prodPoints.map((p, idx) => (
+                              <circle 
+                                key={idx} 
+                                cx={prodX(idx)} 
+                                cy={p.y} 
+                                r="5" 
+                                fill="#ffffff" 
+                                stroke="var(--primary)" 
+                                strokeWidth="3"
+                              >
+                                <title>{p.label}</title>
+                              </circle>
+                            ))}
+                          </svg>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
+                            {prodPoints.map((p, idx) => (
+                              <span key={idx}>{p.label}</span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {/* SPEAKER INSIGHTS TAB */}
+                  {activeAnalyticsTab === 'speakers' && (
+                    <>
+                      <div className="dashboard-card grid-col-8 effect-3d">
+                        <h3 className="card-title" style={{ marginBottom: '0.5rem' }}>Speaker Voice Share Distribution</h3>
+                        <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>Percentage of total audio timeline attributed to each speaker</p>
+                        
+                        {/* Stacked Voice-Share Bar */}
+                        <div style={{ display: 'flex', height: '24px', borderRadius: '12px', overflow: 'hidden', marginBottom: '1.5rem', boxShadow: 'var(--shadow-sm)' }}>
+                          {selectedData.speakers.map((s, idx) => (
+                            <div 
+                              key={idx} 
+                              style={{ width: `${s.percentage}%`, backgroundColor: s.color, height: '100%', transition: 'width 0.3s ease' }} 
+                              title={`${s.name}: ${s.percentage}%`}
+                            />
+                          ))}
+                        </div>
+
+                        {/* Speakers Table */}
+                        <div className="analytics-table-container">
+                          <table className="analytics-table">
+                            <thead>
+                              <tr>
+                                <th>Participant</th>
+                                <th>Voice Share</th>
+                                <th>Talk Time</th>
+                                <th>Interruptions</th>
+                                <th>Audio Clarity</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {selectedData.speakers.map((s, idx) => (
+                                <tr key={idx}>
+                                  <td style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                    <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: s.color }} />
+                                    <span>{s.name}</span>
+                                  </td>
+                                  <td>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                      <div className="progress-bar-container" style={{ width: '60px' }}>
+                                        <div className="progress-bar-fill" style={{ width: `${s.percentage}%`, backgroundColor: s.color }} />
+                                      </div>
+                                      <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{s.percentage}%</span>
+                                    </div>
+                                  </td>
+                                  <td>{Math.floor(s.talkTime / 60) > 0 ? `${Math.floor(s.talkTime / 60)}m ${s.talkTime % 60}s` : `${s.talkTime}s`}</td>
+                                  <td style={{ color: s.interruptions > 10 ? 'var(--danger)' : 'var(--text-secondary)' }}>{s.interruptions} times</td>
+                                  <td>
+                                    <span style={{ color: s.clarity > 90 ? 'var(--success)' : s.clarity > 80 ? 'var(--accent)' : 'var(--danger)', fontWeight: 600 }}>{s.clarity}%</span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="dashboard-card grid-col-4 effect-3d" style={{ display: 'flex', flexDirection: 'column' }}>
+                        <h3 className="card-title">Interruption Dynamics</h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexGrow: 1, padding: '1rem 0' }}>
+                          <div style={{ position: 'relative', width: '120px', height: '120px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1.25rem' }}>
+                            <Volume2 size={40} style={{ color: 'var(--primary)' }} />
+                            <svg viewBox="0 0 100 100" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}>
+                              <circle cx="50" cy="50" r="45" fill="none" stroke="var(--bg-tertiary)" strokeWidth="6" />
+                              <circle cx="50" cy="50" r="45" fill="none" stroke="var(--primary)" strokeWidth="6" strokeDasharray="283" strokeDashoffset={283 - (selectedData.speakers.reduce((acc, s) => acc + s.clarity, 0) / selectedData.speakers.length / 100) * 283} strokeLinecap="round" transform="rotate(-90 50 50)" />
+                            </svg>
+                          </div>
+                          
+                          <div style={{ textAlign: 'center', width: '100%' }}>
+                            <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.25rem' }}>
+                              Avg. Voice Clarity: {Math.round(selectedData.speakers.reduce((acc, s) => acc + s.clarity, 0) / selectedData.speakers.length)}%
+                            </div>
+                            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Based on jitter, packet loss, and background noise suppression analysis.</p>
+                          </div>
+
+                          <div style={{ borderTop: '1px solid var(--border)', marginTop: '1.25rem', paddingTop: '1rem', width: '100%', display: 'flex', justifyContent: 'space-around' }}>
+                            <div style={{ textAlign: 'center' }}>
+                              <span style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                {selectedData.speakers.reduce((acc, s) => acc + s.interruptions, 0)}
+                              </span>
+                              <p style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginTop: '0.15rem' }}>Total Cross-talks</p>
+                            </div>
+                            <div style={{ textAlign: 'center' }}>
+                              <span style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--success)' }}>Active</span>
+                              <p style={{ fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--text-muted)', marginTop: '0.15rem' }}>Punctuality Status</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {/* SENTIMENT & ENGAGEMENT TAB */}
+                  {activeAnalyticsTab === 'sentiment' && (
+                    <>
+                      <div className="dashboard-card grid-col-8 effect-3d">
+                        <h3 className="card-title" style={{ marginBottom: '0.5rem' }}>Sentiment Flow Timeline</h3>
+                        <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>Sentiment classification over the course of the meeting timeline</p>
+                        
+                        <div style={{ height: '220px', position: 'relative', borderBottom: '2px solid var(--color-border)', borderLeft: '2px solid var(--color-border)', margin: '1rem 0', padding: '10px 10px 0 10px' }}>
+                          <svg viewBox={`0 0 ${flowWidth} ${flowHeight}`} style={{ width: '100%', height: '100%', overflow: 'visible' }} preserveAspectRatio="none">
+                            {/* Paths */}
+                            <path d={flowPosPath} fill="none" stroke="#2E7D32" strokeWidth="2.5" style={{ transition: 'd 0.3s ease' }} />
+                            <path d={flowNeuPath} fill="none" stroke="var(--accent)" strokeWidth="2.5" style={{ transition: 'd 0.3s ease' }} />
+                            <path d={flowNegPath} fill="none" stroke="var(--danger)" strokeWidth="2.5" style={{ transition: 'd 0.3s ease' }} />
+                            
+                            {/* Points */}
+                            {flow.map((f, idx) => (
+                              <g key={idx}>
+                                <circle cx={flowX(idx)} cy={flowY(f.positive)} r="4" fill="#2E7D32" />
+                                <circle cx={flowX(idx)} cy={flowY(f.neutral)} r="4" fill="var(--accent)" />
+                                <circle cx={flowX(idx)} cy={flowY(f.negative)} r="4" fill="var(--danger)" />
+                              </g>
+                            ))}
+                          </svg>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-secondary)' }}>
+                            {flow.map((f, idx) => (
+                              <span key={idx}>{f.time}</span>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="chart-legend">
+                          <div className="legend-item">
+                            <div className="legend-color" style={{ backgroundColor: '#2E7D32' }} />
+                            <span>Positive</span>
+                          </div>
+                          <div className="legend-item">
+                            <div className="legend-color" style={{ backgroundColor: 'var(--accent)' }} />
+                            <span>Neutral</span>
+                          </div>
+                          <div className="legend-item">
+                            <div className="legend-color" style={{ backgroundColor: 'var(--danger)' }} />
+                            <span>Negative</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="dashboard-card grid-col-4 effect-3d" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                        <h3 className="card-title" style={{ alignSelf: 'flex-start' }}>Engagement Score</h3>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flexGrow: 1, padding: '1rem 0' }}>
+                          
+                          {/* Circular Progress Ring */}
+                          <div style={{ position: 'relative', width: '130px', height: '130px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1.25rem' }}>
+                            <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
+                              <circle cx="50" cy="50" r="40" fill="none" stroke="var(--bg-tertiary)" strokeWidth="8" />
+                              <circle 
+                                cx="50" 
+                                cy="50" 
+                                r="40" 
+                                fill="none" 
+                                stroke="var(--primary)" 
+                                strokeWidth="8" 
+                                strokeDasharray={251.2} 
+                                strokeDashoffset={251.2 - (selectedData.engagementScore / 100) * 251.2} 
+                                strokeLinecap="round"
+                                style={{ transition: 'stroke-dashoffset 0.5s ease-in-out' }}
+                              />
+                            </svg>
+                            <div style={{ position: 'absolute', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                              <span style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)' }}>{selectedData.engagementScore}%</span>
+                              <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Active</span>
+                            </div>
+                          </div>
+
+                          <div style={{ textAlign: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', justifyContent: 'center', color: '#2E7D32', fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.25rem' }}>
+                              <Smile size={16} />
+                              <span>Highly Attentive</span>
+                            </div>
+                            <p style={{ fontSize: '0.775rem', color: 'var(--text-secondary)', padding: '0 0.5rem' }}>
+                              Visual focus, response latency, and chat message interactions indicate excellent group collaboration.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {/* AI TOPICS & INSIGHTS TAB */}
+                  {activeAnalyticsTab === 'topics' && (
+                    <>
+                      <div className="dashboard-card grid-col-6 effect-3d">
+                        <h3 className="card-title" style={{ marginBottom: '0.5rem' }}>AI Extracted Key Topics</h3>
+                        <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>Important topics extracted from meeting transcription text</p>
+                        
+                        <div className="topic-cloud">
+                          {selectedData.topics.map((t, idx) => (
+                            <div key={idx} className="topic-tag">
+                              <Sparkles size={12} style={{ color: t.importance === 'high' ? 'var(--danger)' : t.importance === 'medium' ? 'var(--primary)' : 'var(--text-muted)' }} />
+                              <span>{t.name}</span>
+                              <span className="topic-count">{t.count}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="dashboard-card grid-col-6 effect-3d">
+                        <h3 className="card-title">AI Meeting Insights</h3>
+                        <div className="insights-list" style={{ marginTop: '0.75rem' }}>
+                          {selectedData.insights.map((insight, idx) => (
+                            <div key={idx} className={`insight-card ${insight.type === 'warning' ? 'warning' : insight.type === 'success' ? 'success' : ''}`}>
+                              <div className="insight-icon">
+                                {insight.type === 'warning' ? (
+                                  <AlertTriangle size={18} style={{ color: 'var(--warning)' }} />
+                                ) : insight.type === 'success' ? (
+                                  <CheckCircle size={18} style={{ color: '#2E7D32' }} />
+                                ) : (
+                                  <Info size={18} style={{ color: 'var(--primary)' }} />
+                                )}
+                              </div>
+                              <div>
+                                <h4 className="insight-title">{insight.title}</h4>
+                                <p style={{ margin: 0 }}>{insight.desc}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                </div>
               </div>
-            </div>
-          </div>
-          )
+            );
+          })()
         )}
 
         {/* ==========================================
@@ -4009,7 +4649,7 @@ export default function App() {
               <div className="form-group" style={{ flex: 1, margin: 0 }}>
                 <input 
                   type="text" 
-                  className="form-input 3d-effect" 
+                  className="form-input effect-3d" 
                   value={historySearchQuery}
                   onChange={(e) => setHistorySearchQuery(e.target.value)}
                   placeholder="Search meeting titles..."
@@ -4017,7 +4657,7 @@ export default function App() {
               </div>
               <div className="form-group" style={{ width: '180px', margin: 0 }}>
                 <select
-                  className="form-input 3d-effect"
+                  className="form-input effect-3d"
                   value={prefHistoryVisibility}
                   onChange={(e) => {
                     setPrefHistoryVisibility(e.target.value);
@@ -4033,7 +4673,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="history-table-container 3d-effect">
+            <div className="history-table-container effect-3d">
               <table className="history-table">
                 <thead>
                   <tr>
@@ -4068,7 +4708,7 @@ export default function App() {
                       <td>{meet.participants}</td>
                       <td style={{maxWidth: '280px', color: 'var(--text-secondary)', fontSize: '0.8rem'}}>{meet.summary}</td>
                       <td>
-                        <button className="btn btn-secondary btn-sm 3d-button" onClick={() => handleExportSummary(meet)}>
+                        <button className="btn btn-secondary btn-sm button-3d" onClick={() => handleExportSummary(meet)}>
                           <FileDown size={14} /> Export
                         </button>
                       </td>
@@ -4096,7 +4736,7 @@ export default function App() {
 
             <div className="dashboard-grid">
               {recordings.length === 0 ? (
-                <div className="dashboard-card col-12 3d-effect text-center" style={{padding: '3rem'}}>
+                <div className="dashboard-card col-12 effect-3d text-center" style={{padding: '3rem'}}>
                   <Video size={48} style={{color: 'var(--text-muted)', marginBottom: '1rem'}} />
                   <h3>No Recordings Available</h3>
                   <p style={{color: 'var(--text-secondary)'}}>Start a meeting room and click the record button to capture live sessions.</p>
@@ -4111,7 +4751,7 @@ export default function App() {
                   }
 
                   return (
-                    <div key={rec.id} className="dashboard-card col-4 3d-effect hover-lift">
+                    <div key={rec.id} className="dashboard-card col-4 effect-3d hover-lift">
                       <div style={{height: '140px', backgroundColor: '#0f172a', borderRadius: '8px', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem', overflow: 'hidden'}}>
                         <Video size={36} style={{color: 'white', opacity: 0.5}} />
                         
@@ -4133,18 +4773,18 @@ export default function App() {
                       <h4 style={{fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.25rem'}}>{rec.title}</h4>
                       <p style={{fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1rem'}}>Recorded: {rec.date} • ID: {rec.id}</p>
                       <div className="flex gap-2">
-                        <button className="btn btn-primary btn-sm w-full 3d-button" onClick={() => handleOpenPlayback(rec)}>
+                        <button className="btn btn-primary btn-sm w-full button-3d" onClick={() => handleOpenPlayback(rec)}>
                           <Play size={14} /> Playback
                         </button>
                         <button 
-                          className={`btn ${isArchived ? 'btn-secondary' : 'btn-success'} btn-sm 3d-button`} 
+                          className={`btn ${isArchived ? 'btn-secondary' : 'btn-success'} btn-sm button-3d`} 
                           onClick={() => handleToggleArchiveRecording(rec.id)} 
                           title={isArchived ? "Remove from permanent archive" : "Archive permanently before expiration"}
                           style={{ padding: '0.5rem' }}
                         >
                           💾
                         </button>
-                        <button className="btn btn-danger btn-sm 3d-button" onClick={() => handleDeleteRecording(rec.id)} style={{padding: '0.5rem'}}>
+                        <button className="btn btn-danger btn-sm button-3d" onClick={() => handleDeleteRecording(rec.id)} style={{padding: '0.5rem'}}>
                           <Trash2 size={14} />
                         </button>
                       </div>
@@ -4169,7 +4809,7 @@ export default function App() {
             <div className="dashboard-grid">
               
               {/* Meeting System Preferences */}
-              <div className="dashboard-card col-6 3d-effect">
+              <div className="dashboard-card col-6 effect-3d">
                 <h3 className="card-title">🎥 Meeting Preferences</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginTop: '1rem' }}>
                   
@@ -4275,7 +4915,7 @@ export default function App() {
                       <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Show past meetings created within this specific timeframe.</p>
                     </div>
                     <select 
-                      className="form-input 3d-effect" 
+                      className="form-input effect-3d" 
                       style={{ width: '160px', margin: 0, padding: '0.35rem 0.75rem', fontSize: '0.85rem' }}
                       value={prefHistoryVisibility}
                       onChange={(e) => {
@@ -4297,7 +4937,7 @@ export default function App() {
                       <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Set resolution aspect for downloaded meeting recording MP4s.</p>
                     </div>
                     <select 
-                      className="form-input 3d-effect" 
+                      className="form-input effect-3d" 
                       style={{ width: '160px', margin: 0, padding: '0.35rem 0.75rem', fontSize: '0.85rem' }}
                       value={prefDownloadQuality}
                       onChange={(e) => {
@@ -4337,7 +4977,7 @@ export default function App() {
                       <h4 style={{ fontWeight: 600, fontSize: '0.95rem' }}>Appearance Mode</h4>
                       <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Toggle between light theme and sleek dark mode.</p>
                     </div>
-                    <button className="btn btn-secondary 3d-button" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }} onClick={toggleTheme}>
+                    <button className="btn btn-secondary button-3d" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }} onClick={toggleTheme}>
                       {isDarkMode ? <Sun size={14} /> : <Moon size={14} />} {isDarkMode ? 'Light Mode' : 'Dark Mode'}
                     </button>
                   </div>
@@ -4346,7 +4986,7 @@ export default function App() {
               </div>
 
               {/* Personal Profile Panel */}
-              <div className="dashboard-card col-6 3d-effect">
+              <div className="dashboard-card col-6 effect-3d">
                 <h3 className="card-title">👤 Personal Profile Info</h3>
                 
                 {/* Profile Photo Live Capture and Local Upload */}
@@ -4355,23 +4995,23 @@ export default function App() {
                     {renderUserAvatar({ width: '80px', height: '80px' })}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flexGrow: 1 }}>
-                    <label className="btn btn-secondary btn-sm 3d-button" style={{ cursor: 'pointer', textAlign: 'center', width: '100%', justifyContent: 'center' }}>
+                    <label className="btn btn-secondary btn-sm button-3d" style={{ cursor: 'pointer', textAlign: 'center', width: '100%', justifyContent: 'center' }}>
                       📁 Upload Photo file
                       <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileUpload} />
                     </label>
-                    <button className="btn btn-primary btn-sm 3d-button" style={{ width: '100%', justifyContent: 'center' }} onClick={isWebcamActive ? stopWebcam : startWebcam}>
+                    <button className="btn btn-primary btn-sm button-3d" style={{ width: '100%', justifyContent: 'center' }} onClick={isWebcamActive ? stopWebcam : startWebcam}>
                       📷 {isWebcamActive ? 'Stop Camera' : 'Take Live Photo'}
                     </button>
                   </div>
                 </div>
 
                 {isWebcamActive && (
-                  <div className="3d-effect" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', padding: '1.25rem', backgroundColor: 'var(--video-bg)', borderRadius: '12px', marginBottom: '1.25rem' }}>
+                  <div className="effect-3d" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', padding: '1.25rem', backgroundColor: 'var(--video-bg)', borderRadius: '12px', marginBottom: '1.25rem' }}>
                     <div style={{ width: '200px', height: '200px', borderRadius: '12px', overflow: 'hidden', border: '2px solid var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000', boxShadow: 'var(--shadow-md)' }}>
                       <video ref={webcamVideoRef} style={{ width: '100%', height: '100%', objectFit: 'cover' }} playsInline muted />
                     </div>
                     {cameraError && <p style={{ color: 'var(--color-danger)', fontSize: '0.8rem' }}>{cameraError}</p>}
-                    <button className="btn btn-success btn-sm 3d-button" onClick={captureWebcamSnapshot}>
+                    <button className="btn btn-success btn-sm button-3d" onClick={captureWebcamSnapshot}>
                       📸 Capture & Set Profile Photo
                     </button>
                   </div>
@@ -4383,7 +5023,7 @@ export default function App() {
                     <label className="form-label">Full Name</label>
                     <input 
                       type="text" 
-                      className="form-input 3d-effect" 
+                      className="form-input effect-3d" 
                       value={username} 
                       onChange={(e) => setUsername(e.target.value)} 
                       placeholder="Guest" 
@@ -4393,7 +5033,7 @@ export default function App() {
                     <label className="form-label">Email Address</label>
                     <input 
                       type="email" 
-                      className="form-input 3d-effect" 
+                      className="form-input effect-3d" 
                       value={email} 
                       onChange={(e) => setEmail(e.target.value)} 
                       disabled={!isAuthenticated}
@@ -4404,7 +5044,7 @@ export default function App() {
                     <label className="form-label">Phone Number</label>
                     <input 
                       type="text" 
-                      className="form-input 3d-effect" 
+                      className="form-input effect-3d" 
                       value={userPhone} 
                       onChange={(e) => setUserPhone(e.target.value)} 
                       placeholder="e.g. +1 555-0199" 
@@ -4414,7 +5054,7 @@ export default function App() {
                     <label className="form-label">Date of Birth (mm/dd/yyyy)</label>
                     <input 
                       type="text" 
-                      className="form-input 3d-effect" 
+                      className="form-input effect-3d" 
                       value={userDob} 
                       onChange={(e) => setUserDob(e.target.value)} 
                       placeholder="e.g. 05/20/1998" 
@@ -4424,7 +5064,7 @@ export default function App() {
               </div>
 
               {/* Password Controller Section */}
-              <div className="dashboard-card col-12 3d-effect">
+              <div className="dashboard-card col-12 effect-3d">
                 <h3 className="card-title">🔒 Password Management</h3>
                 {!isAuthenticated ? (
                   <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
@@ -4439,7 +5079,7 @@ export default function App() {
                         <label className="form-label">Current Password</label>
                         <input 
                           type="password" 
-                          className="form-input 3d-effect" 
+                          className="form-input effect-3d" 
                           value={currentPasswordInput} 
                           onChange={(e) => setCurrentPasswordInput(e.target.value)} 
                           required 
@@ -4449,7 +5089,7 @@ export default function App() {
                         <label className="form-label">New Password</label>
                         <input 
                           type="password" 
-                          className="form-input 3d-effect" 
+                          className="form-input effect-3d" 
                           value={newPasswordInput} 
                           onChange={(e) => setNewPasswordInput(e.target.value)} 
                           required 
@@ -4459,7 +5099,7 @@ export default function App() {
                         <label className="form-label">Confirm New Password</label>
                         <input 
                           type="password" 
-                          className="form-input 3d-effect" 
+                          className="form-input effect-3d" 
                           value={confirmPasswordInput} 
                           onChange={(e) => setConfirmPasswordInput(e.target.value)} 
                           required 
@@ -4468,7 +5108,7 @@ export default function App() {
                       {passwordChangeError && <p style={{ color: 'var(--color-danger)', fontSize: '0.8rem', marginTop: '0.25rem' }}>❌ {passwordChangeError}</p>}
                       {passwordChangeStatus && <p style={{ color: 'var(--color-success)', fontSize: '0.8rem', marginTop: '0.25rem' }}>✅ {passwordChangeStatus}</p>}
                       
-                      <button type="submit" className="btn btn-primary 3d-button" style={{ marginTop: '0.5rem', width: 'fit-content' }}>
+                      <button type="submit" className="btn btn-primary button-3d" style={{ marginTop: '0.5rem', width: 'fit-content' }}>
                         Change Password
                       </button>
                     </div>
@@ -4513,7 +5153,7 @@ export default function App() {
           ========================================== */}
       {showJoinSetupModal && (
         <div className="modal-overlay" style={{ zIndex: 999 }}>
-          <div className="modal-content 3d-effect" style={{ maxWidth: '780px', width: '95%', padding: '2rem' }}>
+          <div className="modal-content effect-3d" style={{ maxWidth: '780px', width: '95%', padding: '2rem' }}>
             <div className="modal-header" style={{ marginBottom: '1.25rem' }}>
               <h3 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Ready to Join?</h3>
             </div>
@@ -4596,7 +5236,7 @@ export default function App() {
                   <label className="form-label">Topic of the meeting</label>
                   <input 
                     type="text" 
-                    className="form-input 3d-effect" 
+                    className="form-input effect-3d" 
                     value={meetingTitle} 
                     onChange={(e) => setMeetingTitle(e.target.value)}
                     placeholder="Enter meeting topic (e.g. Project Alignment)"
@@ -4607,7 +5247,7 @@ export default function App() {
                   <label className="form-label">Your Display Name</label>
                   <input 
                     type="text" 
-                    className="form-input 3d-effect" 
+                    className="form-input effect-3d" 
                     value={username} 
                     onChange={(e) => setUsername(e.target.value)}
                     placeholder="Enter your name"
@@ -4653,8 +5293,8 @@ export default function App() {
             </div>
             
             <div className="modal-footer" style={{ borderTop: '1px solid var(--color-border)', paddingTop: '1rem' }}>
-              <button className="btn btn-secondary 3d-button" onClick={() => setShowJoinSetupModal(false)}>Cancel</button>
-              <button className="btn btn-primary 3d-button" onClick={() => startMeeting(meetingTitle)}>Join Meeting</button>
+              <button className="btn btn-secondary button-3d" onClick={() => setShowJoinSetupModal(false)}>Cancel</button>
+              <button className="btn btn-primary button-3d" onClick={() => startMeeting(meetingTitle)}>Join Meeting</button>
             </div>
           </div>
         </div>
@@ -4663,7 +5303,7 @@ export default function App() {
       {/* Playback Modal */}
       {playbackUrl && (
         <div className="modal-overlay">
-          <div className="modal-content 3d-effect" style={{maxWidth: '700px'}}>
+          <div className="modal-content effect-3d" style={{maxWidth: '700px'}}>
             <div className="modal-header">
               <h3>Play Recording: {playbackTitle}</h3>
               <button className="btn btn-secondary btn-sm" onClick={() => setPlaybackUrl(null)}>X</button>
@@ -4702,11 +5342,11 @@ export default function App() {
                 <a 
                   href={playbackUrl} 
                   download={`${playbackTitle.replace(/\s+/g, '_')}_${downloadQuality}.webm`} 
-                  className="btn btn-primary 3d-button"
+                  className="btn btn-primary button-3d"
                 >
                   <Download size={14} /> Download File
                 </a>
-                <button className="btn btn-secondary 3d-button" onClick={() => setPlaybackUrl(null)}>Close</button>
+                <button className="btn btn-secondary button-3d" onClick={() => setPlaybackUrl(null)}>Close</button>
               </div>
             </div>
           </div>
@@ -4716,7 +5356,7 @@ export default function App() {
       {/* Schedule Modal */}
       {showScheduleModal && (
         <div className="modal-overlay">
-          <div className="modal-content 3d-effect" style={{ maxWidth: '520px' }}>
+          <div className="modal-content effect-3d" style={{ maxWidth: '520px' }}>
             <div className="modal-header">
               <h3>📅 Schedule New Meeting</h3>
             </div>
@@ -4725,7 +5365,7 @@ export default function App() {
                 <label className="form-label">Meeting Title</label>
                 <input 
                   type="text" 
-                  className="form-input 3d-effect" 
+                  className="form-input effect-3d" 
                   placeholder="e.g. Q3 Roadmap Align" 
                   value={schedTitle}
                   onChange={(e) => setSchedTitle(e.target.value)}
@@ -4735,7 +5375,7 @@ export default function App() {
                 <label className="form-label">Date & Time</label>
                 <input 
                   type="datetime-local" 
-                  className="form-input 3d-effect" 
+                  className="form-input effect-3d" 
                   value={schedDateTime}
                   onChange={(e) => setSchedDateTime(e.target.value)}
                 />
@@ -4745,7 +5385,7 @@ export default function App() {
               <div className="form-group">
                 <label className="form-label">Meeting Privacy</label>
                 <select 
-                  className="form-input 3d-effect"
+                  className="form-input effect-3d"
                   value={schedMeetingType}
                   onChange={(e) => setSchedMeetingType(e.target.value as 'public' | 'private')}
                 >
@@ -4762,7 +5402,7 @@ export default function App() {
                   <div className="form-group">
                     <label className="form-label">Recurrence Interval</label>
                     <select 
-                      className="form-input 3d-effect"
+                      className="form-input effect-3d"
                       value={schedRecurrence}
                       onChange={(e) => setSchedRecurrence(e.target.value as 'none' | 'daily' | 'weekly')}
                     >
@@ -4774,7 +5414,7 @@ export default function App() {
                   <div className="form-group">
                     <label className="form-label">Invite Members (emails separated by comma)</label>
                     <textarea 
-                      className="form-input 3d-effect" 
+                      className="form-input effect-3d" 
                       placeholder="e.g. member1@zidio.com, coworker@zidio.com"
                       value={schedInvitedEmails}
                       onChange={(e) => setSchedInvitedEmails(e.target.value)}
@@ -4788,7 +5428,7 @@ export default function App() {
             </div>
             <div className="modal-footer">
               <button 
-                className="btn btn-secondary 3d-button" 
+                className="btn btn-secondary button-3d" 
                 onClick={() => {
                   setSchedTitle('');
                   setSchedDateTime('');
@@ -4800,7 +5440,7 @@ export default function App() {
                 Cancel
               </button>
               <button 
-                className="btn btn-primary 3d-button" 
+                className="btn btn-primary button-3d" 
                 onClick={() => {
                   handleScheduleMeeting(schedTitle, schedDateTime);
                   setShowScheduleModal(false);
@@ -4817,7 +5457,7 @@ export default function App() {
       {/* Passcode Confirmation Modal */}
       {showPasscodeAlert && lastScheduledMeet && (
         <div className="modal-overlay" style={{ zIndex: 1100 }}>
-          <div className="modal-content 3d-effect" style={{ maxWidth: '520px' }}>
+          <div className="modal-content effect-3d" style={{ maxWidth: '520px' }}>
             <div className="modal-header">
               <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>🚀 Meeting Successfully Scheduled</h3>
             </div>
@@ -4853,7 +5493,7 @@ export default function App() {
             </div>
             <div className="modal-footer">
               <button 
-                className="btn btn-primary w-full 3d-button" 
+                className="btn btn-primary w-full button-3d" 
                 onClick={() => {
                   setShowPasscodeAlert(false);
                   setLastScheduledMeet(null);
@@ -4869,7 +5509,7 @@ export default function App() {
       {/* Confirmation Modal */}
       {confirmModal.show && (
         <div className="modal-overlay" style={{ zIndex: 10000 }}>
-          <div className="modal-content 3d-effect" style={{ maxWidth: '400px' }}>
+          <div className="modal-content effect-3d" style={{ maxWidth: '400px' }}>
             <div className="modal-header">
               <h3>{confirmModal.title || 'Confirm Action'}</h3>
             </div>
@@ -4880,13 +5520,13 @@ export default function App() {
             </div>
             <div className="modal-footer">
               <button 
-                className="btn btn-secondary 3d-button" 
+                className="btn btn-secondary button-3d" 
                 onClick={() => setConfirmModal(prev => ({ ...prev, show: false }))}
               >
                 No
               </button>
               <button 
-                className="btn btn-primary 3d-button" 
+                className="btn btn-primary button-3d" 
                 onClick={confirmModal.onConfirm}
               >
                 Yes
@@ -4908,3 +5548,4 @@ export default function App() {
     </div>
   );
 }
+
