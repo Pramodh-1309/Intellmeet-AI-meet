@@ -225,7 +225,7 @@ export default function App() {
   const [schedMeetingType, setSchedMeetingType] = useState<'public' | 'private'>('public');
   const [schedRecurrence, setSchedRecurrence] = useState<'none' | 'daily' | 'weekly'>('none');
   const [schedInvitedEmails, setSchedInvitedEmails] = useState<string>('');
-  const [schedDuration, setSchedDuration] = useState<number>(30);
+  const [schedDuration] = useState<number>(240);
   const [showPasscodeAlert, setShowPasscodeAlert] = useState<boolean>(false);
   const [lastScheduledMeet, setLastScheduledMeet] = useState<ScheduledMeeting | null>(null);
 
@@ -327,6 +327,94 @@ export default function App() {
   // Custom Participant Avatar Index (F-01 addition)
   const [selectedAvatarIdx, setSelectedAvatarIdx] = useState<number>(0);
 
+  // SMTP Server Configuration states
+  const [smtpHost, setSmtpHost] = useState<string>(() => localStorage.getItem('intellmeet_smtp_host') || '');
+  const [smtpPort, setSmtpPort] = useState<string>(() => localStorage.getItem('intellmeet_smtp_port') || '587');
+  const [smtpUser, setSmtpUser] = useState<string>(() => localStorage.getItem('intellmeet_smtp_user') || '');
+  const [smtpPass, setSmtpPass] = useState<string>(() => localStorage.getItem('intellmeet_smtp_pass') || '');
+  const [smtpSender, setSmtpSender] = useState<string>(() => localStorage.getItem('intellmeet_smtp_sender') || '"IntellMeet Workspace" <no-reply@intellmeet.com>');
+  const [etherealPreviewUrl, setEtherealPreviewUrl] = useState<string | null>(null);
+
+  const saveSmtpSettings = () => {
+    localStorage.setItem('intellmeet_smtp_host', smtpHost);
+    localStorage.setItem('intellmeet_smtp_port', smtpPort);
+    localStorage.setItem('intellmeet_smtp_user', smtpUser);
+    localStorage.setItem('intellmeet_smtp_pass', smtpPass);
+    localStorage.setItem('intellmeet_smtp_sender', smtpSender);
+    alert('SMTP Mail Server Settings saved successfully!');
+  };
+
+  const testSendEmail = async () => {
+    if (!smtpHost || !smtpUser || !smtpPass) {
+      alert('Please fill out SMTP Host, Username, and Password first.');
+      return;
+    }
+    const targetEmail = prompt('Enter recipient email address to send a test message:', email || 'user@example.com');
+    if (!targetEmail) return;
+
+    try {
+      const resp = await fetch('/api/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          toEmail: targetEmail.toLowerCase().trim(),
+          otpCode: '123456',
+          smtpSettings: {
+            host: smtpHost,
+            port: smtpPort,
+            user: smtpUser,
+            pass: smtpPass,
+            from: smtpSender
+          }
+        })
+      });
+      const data = await resp.json();
+      if (data.success) {
+        alert('Test email sent successfully! Please check your inbox.');
+      } else {
+        alert('Failed to send test email: ' + data.message);
+      }
+    } catch (e: any) {
+      alert('Network error sending test email: ' + e.message);
+    }
+  };
+
+  const sendOtpEmailLocal = async (targetEmail: string, otpCode: string) => {
+    const smtpSettingsObj = smtpHost ? {
+      host: smtpHost,
+      port: smtpPort,
+      user: smtpUser,
+      pass: smtpPass,
+      from: smtpSender
+    } : undefined;
+
+    try {
+      const resp = await fetch('/api/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          toEmail: targetEmail.toLowerCase().trim(),
+          otpCode,
+          smtpSettings: smtpSettingsObj
+        })
+      });
+      const data = await resp.json();
+      if (data.success) {
+        console.log(`[SMTP] OTP email sent successfully to ${targetEmail}.`);
+        if (data.previewUrl) {
+          setEtherealPreviewUrl(data.previewUrl);
+          console.log(`[ETHEREAL MOCK MAIL BOX] View sent message: ${data.previewUrl}`);
+        } else {
+          setEtherealPreviewUrl(null);
+        }
+      } else {
+        console.error('SMTP OTP Delivery failed:', data.message);
+      }
+    } catch (e: any) {
+      console.error('Network error requesting OTP mail delivery:', e.message);
+    }
+  };
+
   // Navigation State
   const [currentTab, setCurrentTab] = useState<string>('dashboard'); // 'dashboard', 'meeting', 'kanban', 'analytics', 'history', 'recordings'
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState<boolean>(false);
@@ -339,6 +427,8 @@ export default function App() {
   const [inActiveMeeting, setInActiveMeeting] = useState<boolean>(false);
   const [meetingTitle, setMeetingTitle] = useState<string>('');
   const [meetingId, setMeetingId] = useState<string>('');
+  const [activeMeetingPasscode, setActiveMeetingPasscode] = useState<string>('');
+  const [meetingStartTime, setMeetingStartTime] = useState<number>(0);
   const [showJoinSetupModal, setShowJoinSetupModal] = useState<boolean>(false);
   const [showScheduleModal, setShowScheduleModal] = useState<boolean>(false);
 
@@ -430,8 +520,7 @@ export default function App() {
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const recognitionRef = useRef<any>(null);
-  const sarahVideoRef = useRef<HTMLCanvasElement | null>(null);
-  const alexVideoRef = useRef<HTMLCanvasElement | null>(null);
+  const remoteCanvasRefs = useRef<{ [userId: string]: HTMLCanvasElement | null }>({});
   const animationFrameId = useRef<number | null>(null);
 
   // Real-time remote participant syncing
@@ -786,6 +875,13 @@ export default function App() {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
     useEffect(() => {
+      remoteCanvasRefs.current[participant.userId] = canvasRef.current;
+      return () => {
+        delete remoteCanvasRefs.current[participant.userId];
+      };
+    }, [participant.userId]);
+
+    useEffect(() => {
       let animId: number;
       let frame = 0;
 
@@ -943,7 +1039,7 @@ export default function App() {
     } else {
       const usersRaw = localStorage.getItem('intellmeet_local_users') || '[]';
       const localUsers = JSON.parse(usersRaw);
-      const matchedIdx = localUsers.findIndex((u: any) => u.email === email);
+      const matchedIdx = localUsers.findIndex((u: any) => u.email.toLowerCase().trim() === email.toLowerCase().trim());
       
       if (matchedIdx !== -1) {
         if (localUsers[matchedIdx].password !== currentPasswordInput) {
@@ -998,6 +1094,8 @@ export default function App() {
 
     setMeetingTitle(match ? match.title : 'General Sync Room');
     setMeetingId(targetId);
+    setActiveMeetingPasscode(match && match.password ? match.password : joinMeetPassInput.trim());
+    setMeetingStartTime(Date.now());
     setInActiveMeeting(true);
     setCurrentTab('meeting');
     
@@ -1098,16 +1196,27 @@ export default function App() {
           setPosition(session.user.user_metadata?.position || 'Student');
         }
       } else {
-        // Seed default local user if empty
+        // Seed default local user if empty or missing admin account
         const usersRaw = localStorage.getItem('intellmeet_local_users');
-        if (!usersRaw) {
-          const defaultUsers = [{
+        let localUsers = [];
+        if (usersRaw) {
+          try {
+            localUsers = JSON.parse(usersRaw);
+          } catch (e) {
+            localUsers = [];
+          }
+        }
+        if (!Array.isArray(localUsers)) {
+          localUsers = [];
+        }
+        if (!localUsers.some((u: any) => u.email.toLowerCase().trim() === 'admin@zidio.com')) {
+          localUsers.push({
             email: 'admin@zidio.com',
             password: 'Password123!',
             name: 'Pramodh',
             position: 'Software Engineer'
-          }];
-          localStorage.setItem('intellmeet_local_users', JSON.stringify(defaultUsers));
+          });
+          localStorage.setItem('intellmeet_local_users', JSON.stringify(localUsers));
         }
 
         const savedSession = localStorage.getItem('intellmeet_session');
@@ -1301,7 +1410,7 @@ export default function App() {
       // Local Mode Login
       const usersRaw = localStorage.getItem('intellmeet_local_users') || '[]';
       const localUsers = JSON.parse(usersRaw);
-      const matchedUser = localUsers.find((u: any) => u.email === email && u.password === password);
+      const matchedUser = localUsers.find((u: any) => u.email.toLowerCase().trim() === email.toLowerCase().trim() && u.password === password);
 
       if (matchedUser) {
         const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
@@ -1311,6 +1420,7 @@ export default function App() {
         setOtpInput('');
         setResendCooldown(60);
         console.log(`[LOCAL DEV MODE] Generated Sign In OTP for ${email}: ${otpCode}`);
+        sendOtpEmailLocal(matchedUser.email, otpCode);
       } else {
         setAuthError('Invalid credentials. Check email/password or sign up.');
       }
@@ -1353,22 +1463,24 @@ export default function App() {
       setIsAuthenticated(true);
       setUsername(username);
       setPosition(finalPosition);
+      setShowAuthModal(false);
       addSessionLog(username, 'login');
       alert('Registration successful! Welcome to IntellMeet.');
     } else {
       // Local Mode Signup
       const usersRaw = localStorage.getItem('intellmeet_local_users') || '[]';
       const localUsers = JSON.parse(usersRaw);
-      if (localUsers.some((u: any) => u.email === email)) {
+      const normalizedEmail = email.toLowerCase().trim();
+      if (localUsers.some((u: any) => u.email.toLowerCase().trim() === normalizedEmail)) {
         setAuthError('User already exists in local sandbox.');
         return;
       }
 
-      localUsers.push({ email, password, name: username, position: finalPosition });
+      localUsers.push({ email: normalizedEmail, password, name: username, position: finalPosition });
       localStorage.setItem('intellmeet_local_users', JSON.stringify(localUsers));
 
       // Save session object to local storage for persistence on page reload
-      const sessionObj = { email, name: username, position: finalPosition };
+      const sessionObj = { email: normalizedEmail, name: username, position: finalPosition };
       localStorage.setItem('intellmeet_session', JSON.stringify(sessionObj));
 
       setAuthError('');
@@ -1379,6 +1491,7 @@ export default function App() {
       setIsAuthenticated(true);
       setUsername(username);
       setPosition(finalPosition);
+      setShowAuthModal(false);
       addSessionLog(username, 'login');
       alert('Registration successful! Welcome to IntellMeet.');
     }
@@ -1406,6 +1519,7 @@ export default function App() {
       } else if (data?.user) {
         setIsAuthenticated(true);
         setIsOtpMode(false);
+        setShowAuthModal(false);
         const name = data.user.user_metadata?.name || 'User';
         setUsername(name);
         setPosition(data.user.user_metadata?.position || 'Student');
@@ -1415,7 +1529,7 @@ export default function App() {
       if (otpInput === generatedOtp) {
         const usersRaw = localStorage.getItem('intellmeet_local_users') || '[]';
         const localUsers = JSON.parse(usersRaw);
-        const matchedUser = localUsers.find((u: any) => u.email === email);
+        const matchedUser = localUsers.find((u: any) => u.email.toLowerCase().trim() === email.toLowerCase().trim());
 
         if (matchedUser) {
           const sessionObj = { email: matchedUser.email, name: matchedUser.name, position: matchedUser.position };
@@ -1425,6 +1539,7 @@ export default function App() {
           setUsername(matchedUser.name);
           setPosition(matchedUser.position);
           setIsOtpMode(false);
+          setShowAuthModal(false);
           addSessionLog(matchedUser.name, 'login');
         } else {
           setOtpError('User matching credentials not found in local sandbox.');
@@ -1451,6 +1566,7 @@ export default function App() {
       const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
       setGeneratedOtp(otpCode);
       console.log(`[LOCAL DEV MODE] Resent Sign In OTP for ${email}: ${otpCode}`);
+      sendOtpEmailLocal(email, otpCode);
     }
   };
 
@@ -1678,21 +1794,76 @@ export default function App() {
     setChatInput('');
   };
 
+  // Helper to register instant meetings in Supabase/local storage
+  const registerInstantMeeting = async (generatedId: string, generatedPasscode: string, title: string) => {
+    const newMeetingObj: ScheduledMeeting = {
+      id: generatedId,
+      title: title.trim(),
+      dateTime: new Date().toISOString(),
+      host: username || 'User',
+      isHostJoined: true,
+      meetingType: 'public',
+      recurrence: 'none',
+      password: generatedPasscode,
+      invitedEmails: [],
+      responses: {},
+      duration: 999999, // practically unlimited
+      isExpired: false
+    };
+
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        const userId = user ? user.id : null;
+        await supabase
+          .from('scheduled_meetings')
+          .insert([{
+            id: newMeetingObj.id,
+            title: newMeetingObj.title,
+            date_time: newMeetingObj.dateTime,
+            host: newMeetingObj.host,
+            is_host_joined: newMeetingObj.isHostJoined,
+            meeting_type: newMeetingObj.meetingType,
+            recurrence: newMeetingObj.recurrence,
+            password: newMeetingObj.password,
+            invited_emails: newMeetingObj.invitedEmails,
+            responses: newMeetingObj.responses,
+            duration: newMeetingObj.duration,
+            is_expired: newMeetingObj.isExpired,
+            user_id: userId
+          }]);
+      } catch (err) {
+        console.error('Error saving instant meeting to Supabase:', err);
+      }
+    }
+    
+    // Always update local scheduledMeetings state and localStorage fallback
+    setScheduledMeetings(prev => {
+      const updated = [...prev, newMeetingObj];
+      localStorage.setItem('intellmeet_scheduled_v2', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   // Start Meeting Room & Draw WebRTC Simulated Canvas Loops
   const startMeeting = async (title: string) => {
-    setMeetingTitle(title || 'General Team Sync');
+    setMeetingStartTime(Date.now());
     
-    const rand1 = Math.random().toString(36).substr(2, 4).toUpperCase();
-    const rand2 = Math.random().toString(36).substr(2, 4).toUpperCase();
-    setMeetingId(`MEET-${rand1}-${rand2}`);
-    
-    setInActiveMeeting(true);
-    setCurrentTab('meeting');
-    setShowJoinSetupModal(false);
+    let generatedId = '';
+    let generatedPasscode = '';
 
     if (activeJoiningScheduledId) {
       const targetId = activeJoiningScheduledId;
       setActiveJoiningScheduledId(null);
+
+      const match = scheduledMeetings.find(m => m.id === targetId);
+      if (match) {
+        generatedId = match.id;
+        generatedPasscode = match.password || '';
+        setMeetingTitle(match.title);
+        setMeetingId(match.id);
+        setActiveMeetingPasscode(match.password || '');
+      }
 
       if (isSupabaseConfigured() && supabase) {
         const { error } = await supabase
@@ -1713,7 +1884,24 @@ export default function App() {
           return updated;
         });
       }
+    } else {
+      // Instant Meeting - Generate ID & Passcode and Save to DB list
+      const rand1 = Math.random().toString(36).substr(2, 4).toUpperCase();
+      const rand2 = Math.random().toString(36).substr(2, 4).toUpperCase();
+      generatedId = `MEET-${rand1}-${rand2}`;
+      generatedPasscode = 'PASS-' + Math.floor(1000 + Math.random() * 9000);
+      
+      setMeetingTitle(title || 'Instant Meeting');
+      setMeetingId(generatedId);
+      setActiveMeetingPasscode(generatedPasscode);
+
+      // Register so other participants can join this instant meet via ID/Passcode
+      await registerInstantMeeting(generatedId, generatedPasscode, title || 'Instant Meeting');
     }
+
+    setInActiveMeeting(true);
+    setCurrentTab('meeting');
+    setShowJoinSetupModal(false);
   };
 
   // Canvas Mixer and Video Recorder logic (Uses Localhost browser storage)
@@ -1736,7 +1924,15 @@ export default function App() {
       ctx.fillStyle = '#0f172a';
       ctx.fillRect(0, 0, 640, 360);
 
-      // Draw feeds in a grid layout
+      // Define grid coordinates for a 4-quadrant layout
+      const positions = [
+        { x: 0, y: 0 },
+        { x: 320, y: 0 },
+        { x: 0, y: 180 },
+        { x: 320, y: 180 }
+      ];
+
+      // 1. Draw local user at Quadrant 0 (0, 0)
       if (myVideoRef.current && !isCamOff) {
         ctx.drawImage(myVideoRef.current, 0, 0, 320, 180);
       } else {
@@ -1745,15 +1941,24 @@ export default function App() {
         ctx.fillStyle = '#94a3b8';
         ctx.font = '12px Poppins';
         ctx.textAlign = 'center';
-        ctx.fillText("You (Camera Off)", 160, 90);
+        ctx.fillText(`${username || 'You'} (Camera Off)`, 160, 90);
       }
 
-      if (sarahVideoRef.current) {
-        ctx.drawImage(sarahVideoRef.current, 320, 0, 320, 180);
-      }
-      if (alexVideoRef.current) {
-        ctx.drawImage(alexVideoRef.current, 160, 180, 320, 180);
-      }
+      // 2. Draw remote participants dynamically up to 3 remote slots
+      meetingParticipants.slice(0, 3).forEach((p, idx) => {
+        const { x, y } = positions[idx + 1];
+        const canvas = remoteCanvasRefs.current[p.userId];
+        if (canvas && !p.isCamOff) {
+          ctx.drawImage(canvas, x, y, 320, 180);
+        } else {
+          ctx.fillStyle = '#1e293b';
+          ctx.fillRect(x, y, 320, 180);
+          ctx.fillStyle = '#94a3b8';
+          ctx.font = '12px Poppins';
+          ctx.textAlign = 'center';
+          ctx.fillText(`${p.username || 'Participant'} (Camera Off)`, x + 160, y + 90);
+        }
+      });
 
       // Draw Coral recording dot
       ctx.fillStyle = '#F95335';
@@ -1833,16 +2038,39 @@ export default function App() {
   };
 
   const endMeeting = async () => {
+    const meetingEndTime = Date.now();
+    const durationMs = meetingEndTime - (meetingStartTime || meetingEndTime);
+    const durationSecs = Math.max(1, Math.round(durationMs / 1000));
+    const durationMins = Math.max(1, Math.round(durationMs / 60000));
+    const durationText = `${durationMins} mins`;
+    const durationString = `${Math.floor(durationSecs / 60)}m ${durationSecs % 60}s`;
+    const participantCount = 1 + meetingParticipants.length;
+
     if (isRecording) {
       stopRecording();
+    } else {
+      // Save simulated recording session if no manual recording was active
+      const newRec: RecordingItem = {
+        id: 'REC-AUTO-' + Math.random().toString(36).substr(2, 4).toUpperCase(),
+        title: meetingTitle + ' Session',
+        date: new Date().toISOString().split('T')[0],
+        url: 'https://assets.mixkit.co/videos/preview/mixkit-curious-cat-watching-tv-42284-large.mp4',
+        duration: durationString
+      };
+      setRecordings(prev => [newRec, ...prev]);
     }
+
+    const summaryText = `AI-Generated Summary: Meeting regarding "${meetingTitle}". ` + 
+      (sharedNotes.trim() 
+        ? `Key notes captured: ${sharedNotes.trim().substring(0, 150)}...` 
+        : `Discussed project updates, next steps, and real-time collaboration with ${participantCount} participant(s).`);
     
     const newHistoryObj = {
       title: meetingTitle,
       date: new Date().toISOString().split('T')[0],
-      duration: '10 mins',
-      participants: 3,
-      summary: 'AI-Generated Summary: Meeting regarding ' + meetingTitle + '. Discussed real-time collaborations. Notes review contents: ' + sharedNotes.substring(0, 100) + '...',
+      duration: durationText,
+      participants: participantCount,
+      summary: summaryText,
       action_items: meetingActions
     };
 
@@ -1960,90 +2188,6 @@ export default function App() {
         }
       }
 
-      // Draw Sarah's simulated video feed (sarahVideoRef)
-      if (sarahVideoRef.current) {
-        const ctx = sarahVideoRef.current.getContext('2d');
-        if (ctx) {
-          const w = sarahVideoRef.current.width;
-          const h = sarahVideoRef.current.height;
-          ctx.fillStyle = '#0f172a';
-          ctx.fillRect(0, 0, w, h);
-          
-          // Simulated moving sine wave (simulating speaking)
-          ctx.beginPath();
-          ctx.moveTo(0, h / 2);
-          for (let x = 0; x < w; x++) {
-            const y = Math.sin(x * 0.02 + frame * 0.1) * 15 + (h / 2);
-            ctx.lineTo(x, y);
-          }
-          ctx.strokeStyle = 'rgba(80, 163, 164, 0.4)';
-          ctx.lineWidth = 2;
-          ctx.stroke();
-
-          // Add a circle avatar (Sarah Jenkins)
-          ctx.beginPath();
-          ctx.arc(w / 2, h / 2, 35, 0, Math.PI * 2);
-          ctx.fillStyle = '#50A3A4';
-          ctx.fill();
-          ctx.fillStyle = '#ffffff';
-          ctx.font = 'bold 24px Poppins';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText("SJ", w / 2, h / 2);
-
-          // Name overlay
-          ctx.fillStyle = '#ffffff';
-          ctx.font = '12px Poppins';
-          ctx.textAlign = 'left';
-          ctx.fillText("Sarah Jenkins", 15, h - 15);
-        }
-      }
-
-      // Draw Alex's simulated video feed (alexVideoRef)
-      if (alexVideoRef.current) {
-        const ctx = alexVideoRef.current.getContext('2d');
-        if (ctx) {
-          const w = alexVideoRef.current.width;
-          const h = alexVideoRef.current.height;
-          ctx.fillStyle = '#0f172a';
-          ctx.fillRect(0, 0, w, h);
-          
-          // Draw a spinning grid background
-          ctx.strokeStyle = 'rgba(99, 102, 241, 0.15)';
-          ctx.lineWidth = 1;
-          const spacing = 20;
-          const offset = (frame % spacing);
-          for (let x = offset; x < w; x += spacing) {
-            ctx.beginPath();
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, h);
-            ctx.stroke();
-          }
-          for (let y = offset; y < h; y += spacing) {
-            ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(w, y);
-            ctx.stroke();
-          }
-
-          // Draw avatar (Alex Rivera)
-          ctx.beginPath();
-          ctx.arc(w / 2, h / 2, 35, 0, Math.PI * 2);
-          ctx.fillStyle = '#FCAF38';
-          ctx.fill();
-          ctx.fillStyle = '#ffffff';
-          ctx.font = 'bold 24px Poppins';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText("AR", w / 2, h / 2);
-
-          ctx.fillStyle = '#ffffff';
-          ctx.font = '12px Poppins';
-          ctx.textAlign = 'left';
-          ctx.fillText("Alex Rivera", 15, h - 15);
-        }
-      }
-
       animationFrameId.current = requestAnimationFrame(render);
     };
 
@@ -2075,12 +2219,7 @@ export default function App() {
     return diff <= fiveMinutesInMs;
   };
 
-  const isMeetingExpired = (meet: ScheduledMeeting) => {
-    if (meet.meetingType === 'public' && meet.duration) {
-      const startTime = new Date(meet.dateTime).getTime();
-      const endTime = startTime + meet.duration * 60 * 1000;
-      return Date.now() > endTime;
-    }
+  const isMeetingExpired = (_meet: ScheduledMeeting) => {
     return false;
   };
 
@@ -2375,6 +2514,22 @@ export default function App() {
                   marginBottom: '1.25rem'
                 }}>
                   🔑 <b>Dev Mode:</b> Enter OTP code <b>{generatedOtp}</b> to proceed.
+                </div>
+              )}
+
+              {/* Ethereal Mock Mailbox Banner */}
+              {!isSupabaseConfigured() && etherealPreviewUrl && (
+                <div style={{
+                  backgroundColor: '#f0fdf4',
+                  border: '1px dashed #22c55e',
+                  borderRadius: '8px',
+                  padding: '0.75rem',
+                  fontSize: '0.825rem',
+                  color: '#15803d',
+                  textAlign: 'center',
+                  marginBottom: '1.25rem'
+                }}>
+                  📬 <b>Ethereal Mock Mailbox:</b> A test message was captured. <a href={etherealPreviewUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline', fontWeight: 600 }}>Click here to view your inbox</a>.
                 </div>
               )}
 
@@ -3170,10 +3325,16 @@ export default function App() {
             ========================================== */}
         {currentTab === 'meeting' && (
           <div style={{display: 'flex', flexDirection: 'column', height: '100%'}}>
-            <div className="workspace-header" style={{marginBottom: '1rem'}}>
+            <div className="workspace-header" style={{marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem'}}>
               <div>
-                <h1 className="workspace-title">📹 {meetingTitle}</h1>
-                <p style={{color: 'var(--text-secondary)'}}>ID: {meetingId}</p>
+                <h1 className="workspace-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>📹 {meetingTitle}</h1>
+                <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap', fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                  <span><b>Meeting ID:</b> {meetingId}</span>
+                  {activeMeetingPasscode && (
+                    <span><b>Passcode:</b> {activeMeetingPasscode}</span>
+                  )}
+                  <span><b>Join Link:</b> <a href={`http://localhost:3000/join/${meetingId}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>http://localhost:3000/join/{meetingId}</a></span>
+                </div>
               </div>
               <button className="btn btn-danger 3d-button" onClick={endMeeting}>Leave & Generate Summary</button>
             </div>
@@ -3197,23 +3358,6 @@ export default function App() {
                     </span>
                   </div>
 
-                  {/* Sarah Jenkins (Simulated participant) */}
-                  <div className="video-feed active-speaker 3d-effect">
-                    <canvas ref={sarahVideoRef} width="320" height="180"></canvas>
-                    <span className="participant-label">
-                      <div style={{width: '20px', height: '20px', display: 'inline-block'}}>{AVATAR_LOGOS[2]}</div>
-                      Sarah Jenkins
-                    </span>
-                  </div>
-
-                  {/* Alex Rivera (Simulated participant) */}
-                  <div className="video-feed 3d-effect">
-                    <canvas ref={alexVideoRef} width="320" height="180"></canvas>
-                    <span className="participant-label">
-                      <div style={{width: '20px', height: '20px', display: 'inline-block'}}>{AVATAR_LOGOS[1]}</div>
-                      Alex Rivera
-                    </span>
-                  </div>
 
                   {/* Real Remote Participants */}
                   {meetingParticipants.map((p) => (
@@ -3410,8 +3554,9 @@ export default function App() {
                         >
                           <option value="Everyone">Everyone</option>
                           <option value={username}>{username} (You)</option>
-                          <option value="Sarah Jenkins">Sarah Jenkins</option>
-                          <option value="Alex Rivera">Alex Rivera</option>
+                          {meetingParticipants.map(p => (
+                            <option key={p.userId || p.socketId} value={p.username}>{p.username}</option>
+                          ))}
                         </select>
                       </div>
 
@@ -3987,6 +4132,74 @@ export default function App() {
                 )}
               </div>
 
+              {/* SMTP Mail Server Configuration */}
+              <div className="dashboard-card col-12 3d-effect" style={{ marginTop: '1.5rem' }}>
+                <h3 className="card-title">🔑 SMTP Email Server Configuration (Real OTP Setup)</h3>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
+                  Configure your SMTP credentials below to send real OTP verification emails to registered email addresses. If left unconfigured, a zero-config dev mode Ethereal testing account will auto-generate and capture OTP codes.
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">SMTP Host / Server</label>
+                    <input 
+                      type="text" 
+                      className="form-input 3d-effect" 
+                      value={smtpHost} 
+                      onChange={(e) => setSmtpHost(e.target.value)} 
+                      placeholder="e.g. smtp.gmail.com" 
+                    />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">SMTP Port</label>
+                    <input 
+                      type="text" 
+                      className="form-input 3d-effect" 
+                      value={smtpPort} 
+                      onChange={(e) => setSmtpPort(e.target.value)} 
+                      placeholder="e.g. 587 or 465" 
+                    />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">SMTP Username (Email)</label>
+                    <input 
+                      type="text" 
+                      className="form-input 3d-effect" 
+                      value={smtpUser} 
+                      onChange={(e) => setSmtpUser(e.target.value)} 
+                      placeholder="user@example.com" 
+                    />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">SMTP Password</label>
+                    <input 
+                      type="password" 
+                      className="form-input 3d-effect" 
+                      value={smtpPass} 
+                      onChange={(e) => setSmtpPass(e.target.value)} 
+                      placeholder="Your App Password" 
+                    />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Sender Address / Envelope</label>
+                    <input 
+                      type="text" 
+                      className="form-input 3d-effect" 
+                      value={smtpSender} 
+                      onChange={(e) => setSmtpSender(e.target.value)} 
+                      placeholder='"IntellMeet Support" <no-reply@intellmeet.com>' 
+                    />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '1rem', marginTop: '1.25rem' }}>
+                  <button className="btn btn-primary 3d-button" onClick={saveSmtpSettings}>
+                    Save SMTP Configuration
+                  </button>
+                  <button className="btn btn-secondary 3d-button" onClick={testSendEmail} disabled={!smtpHost || !smtpUser}>
+                    Send Test Email
+                  </button>
+                </div>
+              </div>
+
             </div>
           </div>
         )}
@@ -4238,23 +4451,7 @@ export default function App() {
                 </select>
               </div>
 
-              {/* Public Specific Configuration */}
-              {schedMeetingType === 'public' && (
-                <div className="form-group animate-fade-in" style={{ backgroundColor: '#f0fdf4', padding: '0.75rem', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
-                  <label className="form-label">Meeting Duration (Time Frame)</label>
-                  <select 
-                    className="form-input 3d-effect"
-                    value={schedDuration}
-                    onChange={(e) => setSchedDuration(Number(e.target.value))}
-                  >
-                    <option value={15}>15 Minutes</option>
-                    <option value={30}>30 Minutes</option>
-                    <option value={60}>1 Hour</option>
-                    <option value={120}>2 Hours</option>
-                  </select>
-                  <p style={{ fontSize: '0.75rem', color: '#16a34a', marginTop: '0.25rem' }}>ℹ️ Public meeting IDs expire automatically after this duration.</p>
-                </div>
-              )}
+
 
               {/* Private Specific Configuration */}
               {schedMeetingType === 'private' && (

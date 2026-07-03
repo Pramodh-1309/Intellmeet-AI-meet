@@ -41,6 +41,86 @@ app.get('/health', (req, res) => {
   res.json({ status: 'UP', timestamp: new Date() });
 });
 
+import nodemailer from 'nodemailer';
+
+app.post('/api/send-otp', async (req: any, res: any) => {
+  try {
+    const { toEmail, otpCode, smtpSettings } = req.body;
+    
+    if (!toEmail || !otpCode) {
+      return res.status(400).json({ success: false, message: 'Missing parameters (toEmail, otpCode)' });
+    }
+
+    let transporter;
+    if (smtpSettings && smtpSettings.host && smtpSettings.user && smtpSettings.pass) {
+      transporter = nodemailer.createTransport({
+        host: smtpSettings.host,
+        port: parseInt(smtpSettings.port) || 587,
+        secure: smtpSettings.secure === true || smtpSettings.port === '465' || smtpSettings.port === 465,
+        auth: {
+          user: smtpSettings.user,
+          pass: smtpSettings.pass
+        }
+      });
+    } else if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+      transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT || '587'),
+        secure: process.env.SMTP_SECURE === 'true',
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS
+        }
+      });
+    } else {
+      // Ethereal Mock Mailbox
+      const testAccount = await nodemailer.createTestAccount();
+      transporter = nodemailer.createTransport({
+        host: 'smtp.ethereal.email',
+        port: 587,
+        secure: false,
+        auth: {
+          user: testAccount.user,
+          pass: testAccount.pass
+        }
+      });
+    }
+
+    const mailOptions = {
+      from: smtpSettings?.from || process.env.SMTP_FROM || '"IntellMeet Workspace" <no-reply@intellmeet.com>',
+      to: toEmail,
+      subject: '🔐 Your IntellMeet Verification OTP Code',
+      text: `Hello,\n\nYour 6-digit confirmation code is: ${otpCode}\n\nThis code will expire in 10 minutes.\n\nBest regards,\nThe IntellMeet Team`,
+      html: `
+        <div style="font-family: 'Poppins', Helvetica, Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #FAF8F5;">
+          <h2 style="color: #674A40; border-bottom: 2px solid #50A3A4; padding-bottom: 10px;">IntellMeet Verification</h2>
+          <p style="font-size: 16px; color: #4a4a4a;">Hello,</p>
+          <p style="font-size: 16px; color: #4a4a4a;">Your 6-digit verification code is:</p>
+          <div style="background-color: #ffffff; border: 2px dashed #50A3A4; border-radius: 8px; padding: 15px; text-align: center; margin: 20px 0;">
+            <span style="font-size: 32px; font-weight: bold; color: #674A40; letter-spacing: 0.25em;">${otpCode}</span>
+          </div>
+          <p style="font-size: 14px; color: #7a7a7a;">This verification code will expire in 10 minutes. Please do not share this code with anyone.</p>
+          <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+          <p style="font-size: 12px; color: #a0aec0; text-align: center;">Sent by IntellMeet Workspace Collaboration System</p>
+        </div>
+      `
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    const previewUrl = nodemailer.getTestMessageUrl(info);
+
+    res.json({
+      success: true,
+      message: 'OTP sent successfully!',
+      messageId: info.messageId,
+      previewUrl: previewUrl || undefined
+    });
+  } catch (error: any) {
+    console.error('SMTP Email Error:', error);
+    res.status(500).json({ success: false, message: 'SMTP Email Transport failed: ' + error.message });
+  }
+});
+
 app.use(errorHandler);
 
 // Keep track of active rooms and their participants in-memory
