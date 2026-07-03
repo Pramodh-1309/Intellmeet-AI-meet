@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import './App.css';
 import { supabase, isSupabaseConfigured, saveSupabaseKeys, clearSupabaseKeys } from './supabase';
+import { io } from 'socket.io-client';
 
 
 // TypeScript Interfaces
@@ -328,6 +329,11 @@ export default function App() {
 
   // Navigation State
   const [currentTab, setCurrentTab] = useState<string>('dashboard'); // 'dashboard', 'meeting', 'kanban', 'analytics', 'history', 'recordings'
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    setMobileSidebarOpen(false);
+  }, [currentTab]);
 
   // Meeting Room State
   const [inActiveMeeting, setInActiveMeeting] = useState<boolean>(false);
@@ -427,6 +433,156 @@ export default function App() {
   const sarahVideoRef = useRef<HTMLCanvasElement | null>(null);
   const alexVideoRef = useRef<HTMLCanvasElement | null>(null);
   const animationFrameId = useRef<number | null>(null);
+
+  // Real-time remote participant syncing
+  const [meetingParticipants, setMeetingParticipants] = useState<any[]>([]);
+  const socketRef = useRef<any>(null);
+  const useRefId = useRef<string>('');
+
+  // Connect to backend Socket.io or use BroadcastChannel fallback
+  useEffect(() => {
+    if (!inActiveMeeting || !meetingId) {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+      setMeetingParticipants([]);
+      return;
+    }
+
+    const backendUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      ? 'http://localhost:5000'
+      : window.location.origin;
+
+    console.log('Connecting to meeting socket server:', backendUrl);
+    
+    const socket = io(backendUrl, {
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 5,
+      timeout: 10000
+    });
+
+    socketRef.current = socket;
+
+    if (!useRefId.current) {
+      useRefId.current = Math.random().toString(36).substring(2, 9);
+    }
+    const tabUserId = useRefId.current;
+
+    const participantInfo = {
+      userId: tabUserId,
+      username: username || 'Guest User',
+      avatarIdx: selectedAvatarIdx,
+      isMuted,
+      isCamOff
+    };
+
+    socket.on('connect', () => {
+      console.log('Connected to socket, joining room:', meetingId);
+      socket.emit('join-room', meetingId, participantInfo);
+    });
+
+    socket.on('room-users', (users: any[]) => {
+      console.log('Received updated room participants:', users);
+      const remoteUsers = users.filter(u => u.socketId !== socket.id);
+      setMeetingParticipants(remoteUsers);
+    });
+
+    socket.on('connect_error', (err) => {
+      console.warn('Socket connection error:', err);
+    });
+
+    // BroadcastChannel fallback for multi-tab testing on same machine
+    const channelName = `intellmeet_room_${meetingId}`;
+    const channel = new BroadcastChannel(channelName);
+
+    const syncFallback = () => {
+      channel.postMessage({
+        type: 'presence',
+        senderId: tabUserId,
+        info: participantInfo
+      });
+    };
+
+    const fallbackInterval = setInterval(() => {
+      if (!socket.connected) {
+        syncFallback();
+      }
+    }, 2000);
+
+    channel.onmessage = (event) => {
+      if (socket.connected) return;
+      const msg = event.data;
+      if (!msg || !msg.senderId || msg.senderId === tabUserId) return;
+
+      if (msg.type === 'presence') {
+        setMeetingParticipants(prev => {
+          const filtered = prev.filter(u => u.userId !== msg.senderId);
+          return [...filtered, {
+            socketId: msg.senderId,
+            userId: msg.senderId,
+            ...msg.info
+          }];
+        });
+
+        if (msg.isDiscovery) {
+          channel.postMessage({
+            type: 'presence',
+            senderId: tabUserId,
+            info: participantInfo
+          });
+        }
+      } else if (msg.type === 'leave') {
+        setMeetingParticipants(prev => prev.filter(u => u.userId !== msg.senderId));
+      }
+    };
+
+    if (!socket.connected) {
+      channel.postMessage({
+        type: 'presence',
+        senderId: tabUserId,
+        isDiscovery: true,
+        info: participantInfo
+      });
+    }
+
+    return () => {
+      console.log('Cleaning up meeting sockets and channels...');
+      clearInterval(fallbackInterval);
+      channel.postMessage({
+        type: 'leave',
+        senderId: tabUserId
+      });
+      channel.close();
+      socket.disconnect();
+      socketRef.current = null;
+      setMeetingParticipants([]);
+    };
+  }, [inActiveMeeting, meetingId]);
+
+  // Update Media state over sockets/channel
+  useEffect(() => {
+    if (inActiveMeeting && socketRef.current && socketRef.current.connected) {
+      socketRef.current.emit('update-media', { isMuted, isCamOff });
+    }
+    if (inActiveMeeting && meetingId) {
+      const channelName = `intellmeet_room_${meetingId}`;
+      const channel = new BroadcastChannel(channelName);
+      const tabUserId = useRefId.current || 'guest';
+      channel.postMessage({
+        type: 'presence',
+        senderId: tabUserId,
+        info: {
+          userId: tabUserId,
+          username: username || 'Guest User',
+          avatarIdx: selectedAvatarIdx,
+          isMuted,
+          isCamOff
+        }
+      });
+      channel.close();
+    }
+  }, [isMuted, isCamOff, inActiveMeeting, meetingId, username, selectedAvatarIdx]);
 
   // Sync recordings (always local)
   useEffect(() => {
@@ -615,6 +771,71 @@ export default function App() {
       return <img src={profilePhotoUrl} alt="User Avatar" style={{ ...sizeStyle, borderRadius: '50%', objectFit: 'cover' }} />;
     }
     return AVATAR_LOGOS[selectedAvatarIdx];
+  };
+
+  // Remote user avatar renderer
+  const renderRemoteUserAvatar = (avatarIdx: number, avatarUrl?: string, sizeStyle: any = { width: '100%', height: '100%' }) => {
+    if (avatarUrl) {
+      return <img src={avatarUrl} alt="Remote User Avatar" style={{ ...sizeStyle, borderRadius: '50%', objectFit: 'cover' }} />;
+    }
+    return AVATAR_LOGOS[avatarIdx !== undefined ? avatarIdx : 0];
+  };
+
+  // Simulated canvas generator for active participants
+  const ParticipantSimulatedVideo = ({ participant }: { participant: any }) => {
+    const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+    useEffect(() => {
+      let animId: number;
+      let frame = 0;
+
+      const renderCanvas = () => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const w = canvas.width;
+        const h = canvas.height;
+        
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, w, h);
+
+        frame++;
+        ctx.beginPath();
+        ctx.moveTo(0, h / 2);
+        for (let x = 0; x < w; x++) {
+          const y = Math.sin(x * 0.02 + frame * 0.1) * 10 + (h / 2);
+          ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = participant.isMuted ? 'rgba(249, 83, 53, 0.2)' : 'rgba(80, 163, 164, 0.4)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(w / 2, h / 2, 35, 0, Math.PI * 2);
+        ctx.fillStyle = participant.avatarIdx % 2 === 0 ? '#50A3A4' : '#FCAF38';
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 24px Poppins';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const nameText = participant.username || 'Guest';
+        const initials = nameText.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
+        ctx.fillText(initials, w / 2, h / 2);
+
+        animId = requestAnimationFrame(renderCanvas);
+      };
+
+      renderCanvas();
+
+      return () => {
+        cancelAnimationFrame(animId);
+      };
+    }, [participant.userId, participant.avatarIdx, participant.isMuted]);
+
+    return <canvas ref={canvasRef} width="320" height="180" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
   };
 
   // Local file upload parser to base64
@@ -820,8 +1041,8 @@ export default function App() {
           width: '80px',
           height: '80px',
           borderRadius: '50%',
-          backgroundColor: '#fee2e2',
-          color: '#ef4444',
+          backgroundColor: 'rgba(249, 83, 53, 0.1)',
+          color: 'var(--color-danger)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -877,6 +1098,18 @@ export default function App() {
           setPosition(session.user.user_metadata?.position || 'Student');
         }
       } else {
+        // Seed default local user if empty
+        const usersRaw = localStorage.getItem('intellmeet_local_users');
+        if (!usersRaw) {
+          const defaultUsers = [{
+            email: 'admin@zidio.com',
+            password: 'Password123!',
+            name: 'Pramodh',
+            position: 'Software Engineer'
+          }];
+          localStorage.setItem('intellmeet_local_users', JSON.stringify(defaultUsers));
+        }
+
         const savedSession = localStorage.getItem('intellmeet_session');
         if (savedSession) {
           const sessionData = JSON.parse(savedSession);
@@ -1522,8 +1755,8 @@ export default function App() {
         ctx.drawImage(alexVideoRef.current, 160, 180, 320, 180);
       }
 
-      // Draw red recording dot
-      ctx.fillStyle = '#ef4444';
+      // Draw Coral recording dot
+      ctx.fillStyle = '#F95335';
       ctx.beginPath();
       ctx.arc(20, 20, 6, 0, Math.PI * 2);
       ctx.fill();
@@ -1743,14 +1976,14 @@ export default function App() {
             const y = Math.sin(x * 0.02 + frame * 0.1) * 15 + (h / 2);
             ctx.lineTo(x, y);
           }
-          ctx.strokeStyle = 'rgba(16, 185, 129, 0.4)';
+          ctx.strokeStyle = 'rgba(80, 163, 164, 0.4)';
           ctx.lineWidth = 2;
           ctx.stroke();
 
           // Add a circle avatar (Sarah Jenkins)
           ctx.beginPath();
           ctx.arc(w / 2, h / 2, 35, 0, Math.PI * 2);
-          ctx.fillStyle = '#10b981';
+          ctx.fillStyle = '#50A3A4';
           ctx.fill();
           ctx.fillStyle = '#ffffff';
           ctx.font = 'bold 24px Poppins';
@@ -1796,7 +2029,7 @@ export default function App() {
           // Draw avatar (Alex Rivera)
           ctx.beginPath();
           ctx.arc(w / 2, h / 2, 35, 0, Math.PI * 2);
-          ctx.fillStyle = '#6366f1';
+          ctx.fillStyle = '#FCAF38';
           ctx.fill();
           ctx.fillStyle = '#ffffff';
           ctx.font = 'bold 24px Poppins';
@@ -2354,7 +2587,7 @@ export default function App() {
   return (
     <div className="app-container">
       {/* Sidebar - 20% Black */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${mobileSidebarOpen ? 'mobile-open' : ''}`}>
         <div className="logo-section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <div className="logo-icon">
@@ -2362,6 +2595,23 @@ export default function App() {
             </div>
             <span className="logo-text">IntellMeet</span>
           </div>
+          {/* Close button for mobile sidebar */}
+          <button 
+            className="sidebar-close-btn" 
+            onClick={() => setMobileSidebarOpen(false)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-muted)',
+              fontSize: '1.25rem',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              padding: '4px',
+              display: 'none'
+            }}
+          >
+            ✕
+          </button>
           <button 
             className="theme-toggle-btn"
             onClick={toggleTheme}
@@ -2539,6 +2789,25 @@ export default function App() {
         </div>
       </aside>
 
+      {/* Sidebar overlay for mobile drawer */}
+      <div 
+        className={`sidebar-overlay ${mobileSidebarOpen ? 'active' : ''}`} 
+        onClick={() => setMobileSidebarOpen(false)}
+      ></div>
+
+      {/* Mobile Top Header Bar */}
+      <div className="mobile-top-bar">
+        <button className="menu-toggle-btn" onClick={() => setMobileSidebarOpen(true)}>
+          <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2.5" fill="none">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+        <span className="mobile-logo-text">IntellMeet</span>
+        <div style={{ width: '32px' }}></div>
+      </div>
+
       {/* Main Workspace - 65% White */}
       <main className="main-workspace">
         
@@ -2661,7 +2930,7 @@ export default function App() {
             <div className="dashboard-card col-12 3d-effect mb-4">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h3 className="card-title" style={{ margin: 0 }}>📅 Scheduled Meetings</h3>
-                <span className="badge badge-blue">{scheduledMeetings.filter(m => !m.isHostJoined).length} Scheduled</span>
+                <span className="badge badge-primary">{scheduledMeetings.filter(m => !m.isHostJoined).length} Scheduled</span>
               </div>
               <div className="meeting-list">
                 {scheduledMeetings.filter(m => !m.isHostJoined).length > 0 ? (
@@ -2688,7 +2957,7 @@ export default function App() {
                           <div className="meeting-details">
                             <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                               {meet.title}
-                              <span className="badge badge-blue" style={{ fontSize: '0.65rem' }}>{meet.meetingType.toUpperCase()}</span>
+                              <span className="badge badge-primary" style={{ fontSize: '0.65rem' }}>{meet.meetingType.toUpperCase()}</span>
                               {meet.meetingType === 'private' && <span className="badge badge-green" style={{ fontSize: '0.65rem', textTransform: 'capitalize' }}>{meet.recurrence}</span>}
                             </h4>
                             <p>Host: {meet.host} • Scheduled: {new Date(meet.dateTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</p>
@@ -2770,7 +3039,7 @@ export default function App() {
               </div>
 
               {/* Quick AI Extraction Box */}
-              <div className="dashboard-card col-4 3d-effect">
+              <div className="dashboard-card col-4 3d-effect ai-assistant-card">
                 <h3 className="card-title">🤖 AI Meeting Assistant</h3>
                 <div style={{fontSize: '0.875rem', lineHeight: '1.6', color: 'var(--text-secondary)'}}>
                   <p>IntellMeet runs automated speech-to-text summaries to boost efficiency by <b>40-60%</b>.</p>
@@ -2778,7 +3047,7 @@ export default function App() {
                     <div className="action-item-card mt-4">
                       <div className="action-item-card-title">Latest Extracted Task:</div>
                       <div>{tasks[tasks.length - 1].title}</div>
-                      <span className="badge badge-blue mt-2">Assigned: {tasks[tasks.length - 1].assignee}</span>
+                      <span className="badge badge-primary mt-2">Assigned: {tasks[tasks.length - 1].assignee}</span>
                     </div>
                   ) : (
                     <div className="action-item-card mt-4" style={{ backgroundColor: 'var(--bg-secondary)', borderStyle: 'dashed' }}>
@@ -2913,6 +3182,7 @@ export default function App() {
               {/* Left Video Area: Grid */}
               <div className="video-section 3d-effect">
                 <div className="video-grid">
+                  {/* Local User (You) */}
                   <div className={`video-feed ${!isMuted ? 'active-speaker' : ''} 3d-effect`}>
                     {isCamOff ? (
                       <div className="user-avatar" style={{ width: '80px', height: '80px', background: 'transparent' }}>
@@ -2926,6 +3196,48 @@ export default function App() {
                       {username} (You)
                     </span>
                   </div>
+
+                  {/* Sarah Jenkins (Simulated participant) */}
+                  <div className="video-feed active-speaker 3d-effect">
+                    <canvas ref={sarahVideoRef} width="320" height="180"></canvas>
+                    <span className="participant-label">
+                      <div style={{width: '20px', height: '20px', display: 'inline-block'}}>{AVATAR_LOGOS[2]}</div>
+                      Sarah Jenkins
+                    </span>
+                  </div>
+
+                  {/* Alex Rivera (Simulated participant) */}
+                  <div className="video-feed 3d-effect">
+                    <canvas ref={alexVideoRef} width="320" height="180"></canvas>
+                    <span className="participant-label">
+                      <div style={{width: '20px', height: '20px', display: 'inline-block'}}>{AVATAR_LOGOS[1]}</div>
+                      Alex Rivera
+                    </span>
+                  </div>
+
+                  {/* Real Remote Participants */}
+                  {meetingParticipants.map((p) => (
+                    <div key={p.userId || p.socketId} className={`video-feed ${!p.isMuted ? 'active-speaker' : ''} 3d-effect`}>
+                      {p.isCamOff ? (
+                        <div className="user-avatar" style={{ width: '80px', height: '80px', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <div style={{ width: '80px', height: '80px' }}>
+                            {renderRemoteUserAvatar(p.avatarIdx, p.avatarUrl, { width: '80px', height: '80px' })}
+                          </div>
+                        </div>
+                      ) : (
+                        <ParticipantSimulatedVideo participant={p} />
+                      )}
+                      <span className="participant-label">
+                        <div style={{width: '20px', height: '20px', display: 'inline-block'}}>
+                          {renderRemoteUserAvatar(p.avatarIdx, p.avatarUrl, { width: '20px', height: '20px' })}
+                        </div>
+                        {p.username}
+                        {p.isMuted && (
+                          <MicOff size={12} style={{ color: 'var(--color-danger)', marginLeft: '5px', display: 'inline-block' }} />
+                        )}
+                      </span>
+                    </div>
+                  ))}
                 </div>
 
                 {/* Control bar */}
@@ -2958,11 +3270,11 @@ export default function App() {
                   >
                     <span style={{
                       width: '12px', height: '12px', borderRadius: '50%', 
-                      backgroundColor: 'red', display: 'inline-block',
+                      backgroundColor: 'var(--color-danger)', display: 'inline-block',
                       animation: isRecording ? 'pulse 1s infinite' : 'none'
                     }}></span>
                   </button>
-                  {isRecording && <span style={{color: '#ef4444', fontSize: '0.75rem', fontWeight: 600}}>REC</span>}
+                  {isRecording && <span style={{color: 'var(--color-danger)', fontSize: '0.75rem', fontWeight: 600}}>REC</span>}
                 </div>
               </div>
 
@@ -3544,9 +3856,9 @@ export default function App() {
 
                 {/* Webcam Stream Preview Box */}
                 {isWebcamActive && (
-                  <div className="3d-effect" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', padding: '1rem', backgroundColor: '#0f172a', borderRadius: '12px', marginBottom: '1.25rem' }}>
+                  <div className="3d-effect" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', padding: '1rem', backgroundColor: 'var(--video-bg)', borderRadius: '12px', marginBottom: '1.25rem' }}>
                     <video ref={webcamVideoRef} style={{ width: '100%', maxHeight: '180px', borderRadius: '8px', objectFit: 'cover' }} playsInline muted />
-                    {cameraError && <p style={{ color: '#ef4444', fontSize: '0.8rem' }}>{cameraError}</p>}
+                    {cameraError && <p style={{ color: 'var(--color-danger)', fontSize: '0.8rem' }}>{cameraError}</p>}
                     <button className="btn btn-success btn-sm 3d-button" onClick={captureWebcamSnapshot}>
                       📸 Capture & Set Profile Photo
                     </button>

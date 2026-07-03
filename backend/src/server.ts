@@ -43,20 +43,60 @@ app.get('/health', (req, res) => {
 
 app.use(errorHandler);
 
+// Keep track of active rooms and their participants in-memory
+const activeRooms = new Map<string, Map<string, {
+  socketId: string;
+  userId: string;
+  username: string;
+  avatarIdx: number;
+  avatarUrl?: string;
+  isMuted: boolean;
+  isCamOff: boolean;
+}>>();
+
 // Socket.io Connection Handlers
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
+  let currentRoomId: string | null = null;
 
-  // WebRTC Room Signaling
-  socket.on('join-room', (roomId, userId) => {
+  // WebRTC Room Signaling & Participant Tracking
+  socket.on('join-room', (roomId, participantInfo: {
+    userId: string;
+    username: string;
+    avatarIdx: number;
+    avatarUrl?: string;
+    isMuted: boolean;
+    isCamOff: boolean;
+  }) => {
     socket.join(roomId);
-    socket.to(roomId).emit('user-connected', userId);
-    console.log(`User ${userId} joined room ${roomId}`);
+    currentRoomId = roomId;
 
-    socket.on('disconnect', () => {
-      socket.to(roomId).emit('user-disconnected', userId);
-      console.log(`User ${userId} left room ${roomId}`);
+    if (!activeRooms.has(roomId)) {
+      activeRooms.set(roomId, new Map());
+    }
+    const room = activeRooms.get(roomId)!;
+    room.set(socket.id, {
+      socketId: socket.id,
+      ...participantInfo
     });
+
+    console.log(`User ${participantInfo.username} joined room ${roomId}`);
+
+    // Broadcast the updated participant list to everyone in the room
+    io.to(roomId).emit('room-users', Array.from(room.values()));
+  });
+
+  // Update Media State (Mute/Camera)
+  socket.on('update-media', (mediaState: { isMuted: boolean; isCamOff: boolean }) => {
+    if (currentRoomId && activeRooms.has(currentRoomId)) {
+      const room = activeRooms.get(currentRoomId)!;
+      const participant = room.get(socket.id);
+      if (participant) {
+        participant.isMuted = mediaState.isMuted;
+        participant.isCamOff = mediaState.isCamOff;
+        io.to(currentRoomId).emit('room-users', Array.from(room.values()));
+      }
+    }
   });
 
   // Real-time Chat
@@ -67,6 +107,21 @@ io.on('connection', (socket) => {
   // Real-time Collaborative Notes
   socket.on('update-notes', (roomId, notes) => {
     socket.to(roomId).emit('notes-updated', notes);
+  });
+
+  // Disconnect Handler
+  socket.on('disconnect', () => {
+    console.log('User disconnected:', socket.id);
+    if (currentRoomId && activeRooms.has(currentRoomId)) {
+      const room = activeRooms.get(currentRoomId)!;
+      room.delete(socket.id);
+      
+      if (room.size === 0) {
+        activeRooms.delete(currentRoomId);
+      } else {
+        io.to(currentRoomId).emit('room-users', Array.from(room.values()));
+      }
+    }
   });
 });
 

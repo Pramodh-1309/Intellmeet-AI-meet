@@ -5,41 +5,71 @@
   line-height: 1.5;
   font-weight: 400;
 
-  /* Color Palette: 65% White, 20% Black, 15% Blue */
-  --bg-primary: #ffffff;      /* 65% White visual surface */
-  --bg-secondary: #f8fafc;    /* White shading */
-  --bg-tertiary: #f1f5f9;
-  
-  --text-primary: #0f172a;    /* 20% Black/Dark text & Sidebar */
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
-  
-  --color-primary: #0284c7;    /* 15% Accent Blue */
-  --color-hover: #0369a1;
-  --color-light: #e0f2fe;
-  --color-border: #e2e8f0;
+  /* Semantic Color Tokens (Apple & Figma inspired palette) */
+  --primary: #50A3A4;          /* Teal */
+  --secondary: #674A40;        /* Dark Brown */
+  --accent: #FCAF38;           /* Golden Yellow */
+  --success: #50A3A4;          /* Teal */
+  --warning: #FCAF38;          /* Golden Yellow */
+  --danger: #F95335;           /* Coral */
+  --background: #FAF8F5;       /* Page Background */
+  --surface: #FFFFFF;          /* Cards */
+  --textPrimary: #674A40;      /* Dark Brown headings */
+  --textSecondary: #8D6E63;    /* Warm medium brown text */
+  --border: #D7CCC8;           /* Light brown border */
+  --hover: #7F5D51;            /* Slightly lighter brown hover */
 
-  --color-success: #10b981;
-  --color-danger: #ef4444;
-  --color-warning: #f59e0b;
+  /* Legacy CSS variables mapped to the new palette to dynamically update components */
+  --bg-primary: var(--surface);
+  --bg-secondary: var(--background);
+  --bg-tertiary: #F2EFEA;      /* Warm beige shading */
+  
+  --text-primary: var(--textPrimary);
+  --text-secondary: var(--textSecondary);
+  --text-muted: #B19990;       /* Muted brown */
+  
+  --color-primary: var(--primary);
+  --color-hover: #408B8C;      /* Slightly darker Teal */
+  --color-light: #EAF4F4;      /* Soft light Teal tint */
+  --color-border: var(--border);
+
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+
+  /* Sidebar overrides */
+  --sidebar-bg: var(--secondary);
+  --sidebar-hover: var(--hover);
+  --sidebar-border: #563E35;   /* Darker brown border line */
+  
+  /* Meeting specific */
+  --video-bg: #2B1F1B;
+  --video-feed-bg: #4D372E;
 
   --sidebar-width: 260px;
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-sm: 0 1px 2px 0 rgb(103 74 64 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(103 74 64 / 0.1), 0 2px 4px -2px rgb(103 74 64 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(103 74 64 / 0.1), 0 4px 6px -4px rgb(103 74 64 / 0.1);
 }
 
 :root.dark-mode {
-  --bg-primary: #0f172a;
-  --bg-secondary: #1e293b;
-  --bg-tertiary: #334155;
+  --background: #1F1614;       /* Deep warm dark brown */
+  --surface: #2B1F1B;          /* Dark brown card background */
+  --textPrimary: #FAF8F5;      /* Warm white */
+  --textSecondary: #D7CCC8;    /* Warm beige */
+  --border: #4D372E;           /* Medium brown border */
+  --hover: #3A2B27;            /* Medium dark brown hover */
+
+  --bg-primary: var(--surface);
+  --bg-secondary: var(--background);
+  --bg-tertiary: #3A2B27;
   
-  --text-primary: #f8fafc;
-  --text-secondary: #cbd5e1;
-  --text-muted: #64748b;
+  --text-primary: var(--textPrimary);
+  --text-secondary: var(--textSecondary);
+  --text-muted: #8D6E63;
   
-  --color-border: #334155;
-  --color-light: #1e293b;
+  --color-border: var(--border);
+  --color-light: #2E3E3E;      /* Dark teal tint background */
 }
 
 * {
