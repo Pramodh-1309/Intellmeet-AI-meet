@@ -2459,6 +2459,18 @@ export default function App() {
     document.body.removeChild(element);
   };
 
+  const renderLogoWatermark = () => (
+    <div className="logo-watermark-bg">
+      <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: '100%' }}>
+        <path d="M 18 42 A 32 32 0 0 0 27 70" stroke="var(--primary)" strokeWidth="13" strokeLinecap="round" />
+        <path d="M 24 67 A 32 32 0 0 0 76 67" stroke="var(--accent)" strokeWidth="13" />
+        <path d="M 73 70 A 32 32 0 0 0 82 42" stroke="var(--danger)" strokeWidth="13" strokeLinecap="round" />
+        <rect x="42" y="38" width="16" height="42" rx="8" fill="var(--secondary)" />
+        <circle cx="50" cy="22" r="7.5" fill="var(--secondary)" />
+      </svg>
+    </div>
+  );
+
   const getButtonStatus = (dateTimeStr: string) => {
     const scheduledTime = new Date(dateTimeStr).getTime();
     const diff = scheduledTime - currentTime;
@@ -2762,7 +2774,13 @@ export default function App() {
 
           <div className="auth-logo">
             <div className="auth-logo-icon">
-              <Video size={24} />
+              <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: '100%' }}>
+                <path d="M 18 42 A 32 32 0 0 0 27 70" stroke="var(--primary)" strokeWidth="13" strokeLinecap="round" />
+                <path d="M 24 67 A 32 32 0 0 0 76 67" stroke="var(--accent)" strokeWidth="13" />
+                <path d="M 73 70 A 32 32 0 0 0 82 42" stroke="var(--danger)" strokeWidth="13" strokeLinecap="round" />
+                <rect x="42" y="38" width="16" height="42" rx="8" fill="var(--secondary)" />
+                <circle cx="50" cy="22" r="7.5" fill="var(--secondary)" />
+              </svg>
             </div>
             <span className="logo-text" style={{color: 'var(--text-primary)'}}>IntellMeet</span>
           </div>
@@ -2995,7 +3013,13 @@ export default function App() {
         <div className="logo-section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <div className="logo-icon">
-              <Video size={18} />
+              <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: '100%' }}>
+                <path d="M 18 42 A 32 32 0 0 0 27 70" stroke="var(--primary)" strokeWidth="13" strokeLinecap="round" />
+                <path d="M 24 67 A 32 32 0 0 0 76 67" stroke="var(--accent)" strokeWidth="13" />
+                <path d="M 73 70 A 32 32 0 0 0 82 42" stroke="var(--danger)" strokeWidth="13" strokeLinecap="round" />
+                <rect x="42" y="38" width="16" height="42" rx="8" fill="var(--secondary)" />
+                <circle cx="50" cy="22" r="7.5" fill="var(--secondary)" />
+              </svg>
             </div>
             <span className="logo-text">IntellMeet</span>
           </div>
@@ -3287,6 +3311,7 @@ export default function App() {
                   Join Meeting
                 </button>
               </div>
+              {renderLogoWatermark()}
             </div>
 
 
@@ -5296,6 +5321,7 @@ export default function App() {
               <button className="btn btn-secondary button-3d" onClick={() => setShowJoinSetupModal(false)}>Cancel</button>
               <button className="btn btn-primary button-3d" onClick={() => startMeeting(meetingTitle)}>Join Meeting</button>
             </div>
+            {renderLogoWatermark()}
           </div>
         </div>
       )}

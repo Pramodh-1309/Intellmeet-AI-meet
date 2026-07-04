@@ -4,6 +4,10 @@
   height: 100vh;
   overflow: hidden;
   background-color: var(--bg-secondary);
+  background-image: var(--workspace-bg-image);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
   font-family: 'Poppins', sans-serif;
   width: 100%;
 }
@@ -21,6 +25,8 @@
   box-shadow: 4px 0 25px rgba(0, 0, 0, 0.05);
   z-index: 100;
   transition: all 0.3s ease;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
 .logo-section {
@@ -33,16 +39,16 @@
 }
 
 .logo-icon {
-  width: 32px;
-  height: 32px;
-  background-color: var(--color-primary);
-  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  background-color: #ffffff;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
-  box-shadow: 0 4px 10px rgba(80, 163, 164, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   transition: transform 0.3s ease;
+  padding: 4px;
 }
 
 .logo-section:hover .logo-icon {
@@ -53,7 +59,7 @@
   font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: -0.025em;
-  color: var(--text-primary);
+  color: var(--sidebar-text-primary);
   transition: color 0.3s ease;
 }
 
@@ -122,6 +128,10 @@
   color: var(--sidebar-active-text);
   background-color: var(--sidebar-active-bg);
   font-weight: 600;
+  background-image: var(--sidebar-active-watermark);
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 22px;
 }
 
 .nav-item.active svg {
@@ -186,7 +196,7 @@
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  background-color: var(--bg-primary);
+  background-color: transparent;
   padding: 2rem;
   position: relative;
 }
@@ -339,15 +349,15 @@
 }
 
 .auth-logo-icon {
-  background-color: var(--color-primary);
-  color: white;
-  width: 42px;
-  height: 42px;
-  border-radius: 10px;
+  background-color: #ffffff;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 10px rgba(80, 163, 164, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  padding: 5px;
 }
 
 .auth-title {
@@ -413,8 +423,10 @@
 }
 
 .dashboard-card {
-  background-color: var(--bg-primary);
-  border: 1px solid var(--color-border);
+  background: var(--card-bg-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: var(--card-border-glass);
   border-radius: 12px;
   padding: 1.5rem;
   box-shadow: var(--shadow-sm);
@@ -631,8 +643,10 @@
 
 /* Transcription Panel */
 .transcript-box {
-  background-color: var(--bg-primary);
-  border: 1px solid var(--color-border);
+  background: var(--card-bg-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: var(--card-border-glass);
   border-radius: 12px;
   padding: 1.25rem;
   display: flex;
@@ -763,8 +777,10 @@
 }
 
 .kanban-card {
-  background-color: var(--bg-primary);
-  border: 1px solid var(--color-border);
+  background: var(--card-bg-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: var(--card-border-glass);
   border-radius: 8px;
   padding: 1rem;
   box-shadow: var(--shadow-sm);
@@ -815,9 +831,11 @@
 /* History Page Table */
 .history-table-container {
   overflow-x: auto;
-  border: 1px solid var(--color-border);
+  border: var(--card-border-glass);
   border-radius: 12px;
-  background-color: var(--bg-primary);
+  background: var(--card-bg-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   box-shadow: var(--shadow-sm);
 }
 
@@ -1763,6 +1781,31 @@ input:checked + .slider-round:before {
   color: var(--text-primary);
   margin-bottom: 0.15rem;
 }
+
+/* Decorative logo watermark background overlay */
+.logo-watermark-bg {
+  position: absolute;
+  right: -30px;
+  bottom: -30px;
+  width: 140px;
+  height: 140px;
+  opacity: 0.05;
+  pointer-events: none;
+  transform: rotate(-15deg);
+  transition: opacity 0.3s ease;
+  z-index: 1;
+}
+
+.dashboard-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboard-card:hover .logo-watermark-bg {
+  opacity: 0.08;
+}
+
+
 
 
 

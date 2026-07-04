@@ -21,6 +21,8 @@
 
   /* Legacy CSS variables mapped to the new palette to dynamically update components */
   --bg-primary: var(--surface);
+  --card-bg-glass: rgba(255, 255, 255, 0.65);
+  --card-border-glass: 1px solid rgba(103, 74, 64, 0.12);
   --bg-secondary: var(--background);
   --bg-tertiary: #F2EFEA;      /* Warm beige shading */
   
@@ -38,12 +40,16 @@
   --color-warning: var(--warning);
 
   /* Sidebar overrides (Dark Brown Branding Theme) */
-  --sidebar-bg: linear-gradient(180deg, #674A40 0%, #563E35 100%);
+  --sidebar-bg: linear-gradient(180deg, rgba(84, 57, 48, 0.85) 0%, rgba(61, 40, 34, 0.85) 100%);
   --sidebar-hover: rgba(255, 255, 255, 0.08);
   --sidebar-border: rgba(255, 255, 255, 0.06);
   --sidebar-text: #E5DCD9;
   --sidebar-active-bg: rgba(255, 255, 255, 0.15);
   --sidebar-active-text: #ffffff;
+  --sidebar-text-primary: #ffffff;
+  --sidebar-active-watermark: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill='none'><path d='M 18 42 A 32 32 0 0 0 27 70' stroke='rgba(255,255,255,0.06)' stroke-width='13' stroke-linecap='round'/><path d='M 24 67 A 32 32 0 0 0 76 67' stroke='rgba(255,255,255,0.06)' stroke-width='13'/><path d='M 73 70 A 32 32 0 0 0 82 42' stroke='rgba(255,255,255,0.06)' stroke-width='13' stroke-linecap='round'/><rect x='42' y='38' width='16' height='42' rx='8' fill='rgba(255,255,255,0.06)'/><circle cx='50' cy='22' r='7.5' fill='rgba(255,255,255,0.06)'/></svg>");
+  
+  --workspace-bg-image: url('/bg_logo_light_watermark.png');
   
   /* Meeting specific */
   --video-bg: #2B1F1B;
@@ -64,6 +70,8 @@
   --hover: #3A2B27;            /* Medium dark brown hover */
 
   --bg-primary: var(--surface);
+  --card-bg-glass: rgba(43, 31, 27, 0.75);
+  --card-border-glass: 1px solid rgba(255, 255, 255, 0.08);
   --bg-secondary: var(--background);
   --bg-tertiary: #3A2B27;
   
@@ -74,12 +82,15 @@
   --color-border: var(--border);
   --color-light: #2E3E3E;      /* Dark teal tint background */
 
-  --sidebar-bg: linear-gradient(180deg, #18110F 0%, #251B18 100%);
+  --sidebar-bg: linear-gradient(180deg, rgba(24, 17, 15, 0.85) 0%, rgba(37, 27, 24, 0.85) 100%);
   --sidebar-hover: rgba(80, 163, 164, 0.12);
   --sidebar-border: rgba(255, 255, 255, 0.06);
   --sidebar-text: #FAF8F5;
   --sidebar-active-bg: rgba(80, 163, 164, 0.2);
   --sidebar-active-text: #ffffff;
+  --sidebar-text-primary: #ffffff;
+  --sidebar-active-watermark: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill='none'><path d='M 18 42 A 32 32 0 0 0 27 70' stroke='rgba(255,255,255,0.06)' stroke-width='13' stroke-linecap='round'/><path d='M 24 67 A 32 32 0 0 0 76 67' stroke='rgba(255,255,255,0.06)' stroke-width='13'/><path d='M 73 70 A 32 32 0 0 0 82 42' stroke='rgba(255,255,255,0.06)' stroke-width='13' stroke-linecap='round'/><rect x='42' y='38' width='16' height='42' rx='8' fill='rgba(255,255,255,0.06)'/><circle cx='50' cy='22' r='7.5' fill='rgba(255,255,255,0.06)'/></svg>");
+  --workspace-bg-image: url('/bg_logo_watermark.png');
 }
 
 * {
