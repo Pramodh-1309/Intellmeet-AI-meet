@@ -20,11 +20,11 @@ export const getTasks = async (req: Request, res: Response) => {
   }
 };
 
-export const updateTaskStatus = async (req: Request, res: Response) => {
+export const updateTask = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { status } = req.body;
-    const task = await Task.findByIdAndUpdate(id, { status }, { new: true });
+    const updateData = req.body;
+    const task = await Task.findByIdAndUpdate(id, updateData, { new: true });
     res.json(task);
   } catch (error: any) {
     res.status(500).json({ message: error.message });

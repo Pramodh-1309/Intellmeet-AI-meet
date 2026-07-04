@@ -1,9 +1,10 @@
 import { Router } from 'express';
-import { createTask, getTasks, updateTaskStatus } from '../controllers/taskController';
+import { createTask, getTasks, updateTask } from '../controllers/taskController';
+import { authMiddleware, requireRole } from '../middleware/auth';
 
 const router = Router();
-router.post('/', createTask);
+router.post('/', authMiddleware, requireRole(['Admin', 'Software Engineer']), createTask);
 router.get('/', getTasks);
-router.patch('/:id/status', updateTaskStatus);
+router.put('/:id', authMiddleware, requireRole(['Admin', 'Software Engineer']), updateTask);
 
 export default router;

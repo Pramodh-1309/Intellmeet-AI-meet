@@ -13,7 +13,7 @@ export const signup = async (req: Request, res: Response) => {
     const user = new User({ name, email, password: hashedPassword, role });
     await user.save();
 
-    const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET || 'supersecret_token', { expiresIn: '7d' });
+    const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET || 'supersecret_intellmeet_token_2026', { expiresIn: '7d' });
     res.status(201).json({ token, user: { id: user._id, name: user.name, email: user.email, role: user.role } });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
@@ -29,7 +29,7 @@ export const login = async (req: Request, res: Response) => {
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(400).json({ message: 'Invalid password' });
 
-    const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET || 'supersecret_token', { expiresIn: '7d' });
+    const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET || 'supersecret_intellmeet_token_2026', { expiresIn: '7d' });
     res.json({ token, user: { id: user._id, name: user.name, email: user.email, role: user.role } });
   } catch (error: any) {
     res.status(500).json({ message: error.message });
