@@ -619,6 +619,7 @@ export default function App() {
   const [meetingStartTime, setMeetingStartTime] = useState<number>(0);
   const [showJoinSetupModal, setShowJoinSetupModal] = useState<boolean>(false);
   const [showScheduleModal, setShowScheduleModal] = useState<boolean>(false);
+  const [activeKanbanTab, setActiveKanbanTab] = useState<string>('todo');
 
   // Dark/Light Theme Mode
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -4116,7 +4117,7 @@ export default function App() {
             ========================================== */}
         {currentTab === 'kanban' && (
           !isAuthenticated ? renderLockedFeaturePlaceholder("Task Management Hub", "Collaborate with your team using our integrated Kanban board. Track action items, assign subtasks, and manage work items extracted automatically by our AI meeting assistant.") : (
-          <div>
+          <div style={{ display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 130px)' }}>
             <div className="workspace-header">
               <div>
                 <h1 className="workspace-title">📋 Task Management Hub</h1>
@@ -4124,21 +4125,67 @@ export default function App() {
               </div>
             </div>
 
-            <div className="kanban-grid">
-              {['todo', 'in_progress', 'done', 'review'].map(statusKey => (
-                <div key={statusKey} className="kanban-column effect-3d">
-                  <div className="kanban-column-header">
-                    <span className="column-title" style={{textTransform: 'uppercase'}}>{statusKey.replace('_', ' ')}</span>
-                    <span className="column-count">{tasks.filter(t => t.status === statusKey).length}</span>
-                  </div>
-                  <div className="kanban-cards">
-                    {tasks.filter(t => t.status === statusKey).map(t => (
+            <div className="kanban-tab-container" style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '1rem', flexWrap: 'wrap' }}>
+              {['todo', 'in_progress', 'done', 'review'].map(statusKey => {
+                const count = tasks.filter(t => t.status === statusKey).length;
+                const isActive = activeKanbanTab === statusKey;
+                return (
+                  <button 
+                    key={statusKey} 
+                    className={`kanban-tab-btn ${isActive ? 'active' : ''} button-3d`}
+                    onClick={() => setActiveKanbanTab(statusKey)}
+                    style={{
+                      padding: '0.6rem 1.25rem',
+                      borderRadius: '8px',
+                      border: isActive ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+                      backgroundColor: isActive ? 'var(--bg-primary)' : 'var(--bg-secondary)',
+                      color: isActive ? 'var(--color-primary)' : 'var(--text-secondary)',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      transition: 'all 0.2s ease',
+                      boxShadow: isActive ? '0 4px 12px rgba(80,163,164,0.15)' : 'none'
+                    }}
+                  >
+                    <span style={{ textTransform: 'uppercase', fontSize: '0.8rem', letterSpacing: '0.05em' }}>
+                      {statusKey.replace('_', ' ')}
+                    </span>
+                    <span style={{
+                      backgroundColor: isActive ? 'var(--color-primary)' : 'var(--bg-tertiary)',
+                      color: isActive ? '#ffffff' : 'var(--text-secondary)',
+                      padding: '0.15rem 0.45rem',
+                      borderRadius: '12px',
+                      fontSize: '0.7rem',
+                      fontWeight: 700
+                    }}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="kanban-grid" style={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
+              <div className="kanban-column effect-3d" style={{ width: '100%', flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+                <div className="kanban-column-header" style={{ marginBottom: '1.25rem' }}>
+                  <span className="column-title" style={{ textTransform: 'uppercase', fontWeight: 700 }}>{activeKanbanTab.replace('_', ' ')}</span>
+                  <span className="column-count">{tasks.filter(t => t.status === activeKanbanTab).length} Tasks</span>
+                </div>
+                <div className="kanban-cards" style={{ display: 'grid', gridTemplateColumns: activeKanbanTab === 'review' ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
+                  {tasks.filter(t => t.status === activeKanbanTab).length === 0 ? (
+                    <div style={{ gridColumn: '1 / -1', width: '100%', padding: '4rem 2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem', backgroundColor: 'rgba(0,0,0,0.02)', borderRadius: '12px', border: '1px dashed var(--color-border)' }}>
+                      No tasks found in this section.
+                    </div>
+                  ) : (
+                    tasks.filter(t => t.status === activeKanbanTab).map(t => (
                       <div key={t.id} className="kanban-card effect-3d">
                         <h4 className="kanban-card-title">{t.title}</h4>
                         <p className="kanban-card-desc">{t.description}</p>
                         <div className="kanban-card-footer">
-                          <span className="assignee"><Users size={12} /> {t.assignee}</span>
-                          <span className="priority-tag" style={{color: t.priority === 'high' ? 'var(--color-danger)' : 'var(--color-warning)'}}>{t.priority}</span>
+                           <span className="assignee"><Users size={12} /> {t.assignee}</span>
+                           <span className="priority-tag" style={{color: t.priority === 'high' ? 'var(--color-danger)' : 'var(--color-warning)'}}>{t.priority}</span>
                         </div>
 
                         {/* Review Notes - Rendered only when in REVIEW column */}
@@ -4212,10 +4259,10 @@ export default function App() {
                           </div>
                         )}
                       </div>
-                    ))}
-                  </div>
+                    ))
+                  )}
                 </div>
-              ))}
+              </div>
             </div>
           </div>
           )

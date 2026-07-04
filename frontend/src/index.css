@@ -128,17 +128,27 @@ input, select, textarea {
 }
 
 /* Scrollbar styling */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(103, 74, 64, 0.25) transparent;
+}
+
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--bg-tertiary);
+  background: transparent !important;
+  border: none !important;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--text-muted);
-  border-radius: 3px;
+  background: var(--text-muted) !important;
+  border-radius: 4px !important;
+  border: none !important;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-secondary);
+  background: var(--text-secondary) !important;
+}
+::-webkit-scrollbar-corner {
+  background: transparent !important;
 }
