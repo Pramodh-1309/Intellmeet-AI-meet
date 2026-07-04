@@ -2758,20 +2758,6 @@ export default function App() {
           >
             ✕
           </button>
-          
-          {/* Supabase Config Toggle Button */}
-          <button 
-            className="supabase-config-toggle" 
-            style={{ right: 'auto', left: '1rem' }}
-            onClick={() => {
-              setSupaUrlInput(localStorage.getItem('INTELLMEET_SUPABASE_URL') || '');
-              setSupaKeyInput(localStorage.getItem('INTELLMEET_SUPABASE_ANON_KEY') || '');
-              setShowSupaConfig(true);
-            }}
-            title="Configure Supabase"
-          >
-            <Settings size={20} />
-          </button>
 
           <div className="auth-logo">
             <div className="auth-logo-icon">
@@ -2785,19 +2771,6 @@ export default function App() {
             </div>
             <span className="logo-text" style={{color: 'var(--text-primary)'}}>IntellMeet</span>
           </div>
-
-          {/* Connection Mode Indicator */}
-          {isSupabaseConfigured() ? (
-            <div className="connection-indicator supabase">
-              <span className="indicator-dot"></span>
-              Supabase Connected
-            </div>
-          ) : (
-            <div className="connection-indicator local">
-              <span className="indicator-dot"></span>
-              Local Sandbox Mode
-            </div>
-          )}
 
           <div>
             <h2 className="auth-title">{isRegisterMode ? 'Create Account' : 'Sign In'}</h2>
