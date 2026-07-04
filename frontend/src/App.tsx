@@ -481,6 +481,8 @@ export default function App() {
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
   const [isRecording, setIsRecording] = useState<boolean>(false);
 
+
+
   // Right sidebar tab state inside meeting room
   const [activeRightTab, setActiveRightTab] = useState<string>('transcript');
 
@@ -536,6 +538,16 @@ export default function App() {
   const pcsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const socketRef = useRef<any>(null);
   const useRefId = useRef<string>('');
+
+  const isScreenSharingRef = useRef(isScreenSharing);
+  const isCamOffRef = useRef(isCamOff);
+  const meetingParticipantsRef = useRef(meetingParticipants);
+  const usernameRef = useRef(username);
+
+  useEffect(() => { isScreenSharingRef.current = isScreenSharing; }, [isScreenSharing]);
+  useEffect(() => { isCamOffRef.current = isCamOff; }, [isCamOff]);
+  useEffect(() => { meetingParticipantsRef.current = meetingParticipants; }, [meetingParticipants]);
+  useEffect(() => { usernameRef.current = username; }, [username]);
 
   // Connect to backend Socket.io or use BroadcastChannel fallback
   useEffect(() => {
@@ -2486,15 +2498,20 @@ export default function App() {
       ctx.fillStyle = '#0f172a';
       ctx.fillRect(0, 0, 640, 360);
 
-      if (isScreenSharing) {
+      const isSharing = isScreenSharingRef.current;
+      const participants = meetingParticipantsRef.current;
+      const camOff = isCamOffRef.current;
+      const uName = usernameRef.current;
+
+      if (isSharing) {
         // 1. Draw screen share stream to fill the entire canvas
         if (hiddenScreenVideoRef.current) {
           ctx.drawImage(hiddenScreenVideoRef.current, 0, 0, 640, 360);
         }
         
         // 2. Draw active participants in a PIP overlay corner (e.g. bottom-right)
-        if (meetingParticipants.length > 0) {
-          const firstP = meetingParticipants[0];
+        if (participants.length > 0) {
+          const firstP = participants[0];
           const canvas = remoteCanvasRefs.current[firstP.userId];
           if (canvas && !firstP.isCamOff) {
             ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
@@ -2509,11 +2526,11 @@ export default function App() {
         }
       } else {
         // No screen sharing: decide layout based on participant count
-        const totalPeople = 1 + meetingParticipants.length;
+        const totalPeople = 1 + participants.length;
         
         if (totalPeople === 1) {
           // Solo Host: host fills the entire canvas!
-          if (hiddenVideoRef.current && !isCamOff) {
+          if (hiddenVideoRef.current && !camOff) {
             ctx.drawImage(hiddenVideoRef.current, 0, 0, 640, 360);
           } else {
             ctx.fillStyle = '#1e293b';
@@ -2521,7 +2538,7 @@ export default function App() {
             ctx.fillStyle = '#94a3b8';
             ctx.font = '16px Poppins';
             ctx.textAlign = 'center';
-            ctx.fillText(`${username || 'You'} (Camera Off)`, 320, 180);
+            ctx.fillText(`${uName || 'You'} (Camera Off)`, 320, 180);
           }
         } else {
           // Multi-person grid: 4-quadrant layout
@@ -2533,7 +2550,7 @@ export default function App() {
           ];
 
           // Draw host at quadrant 0
-          if (hiddenVideoRef.current && !isCamOff) {
+          if (hiddenVideoRef.current && !camOff) {
             ctx.drawImage(hiddenVideoRef.current, 0, 0, 320, 180);
           } else {
             ctx.fillStyle = '#1e293b';
@@ -2541,11 +2558,11 @@ export default function App() {
             ctx.fillStyle = '#94a3b8';
             ctx.font = '12px Poppins';
             ctx.textAlign = 'center';
-            ctx.fillText(`${username || 'You'} (Camera Off)`, 160, 90);
+            ctx.fillText(`${uName || 'You'} (Camera Off)`, 160, 90);
           }
 
           // Draw remote participants
-          meetingParticipants.slice(0, 3).forEach((p, idx) => {
+          participants.slice(0, 3).forEach((p, idx) => {
             const { x, y } = positions[idx + 1];
             const canvas = remoteCanvasRefs.current[p.userId];
             if (canvas && !p.isCamOff) {
