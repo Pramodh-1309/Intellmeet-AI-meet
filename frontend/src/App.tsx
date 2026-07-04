@@ -2028,11 +2028,33 @@ export default function App() {
       const totalHrs = (totalMinutes / 60).toFixed(1);
 
       // Dynamically calculate average sentiment and efficiency from real history
-      const totalSentiment = historyList.reduce((acc, m) => acc + (70 + (m.title.length % 20)), 0);
-      const totalEfficiency = historyList.reduce((acc, m) => acc + (75 + (m.summary.length % 15)), 0);
-      const avgSentiment = Math.round(totalSentiment / totalMeets);
-      const avgEfficiency = Math.round(totalEfficiency / totalMeets);
+      let positiveCountAll = 0;
+      let negativeCountAll = 0;
+      let actionItemsCountAll = 0;
+      let totalTranscriptLinesAll = 0;
       
+      const positiveWords = ['great', 'good', 'awesome', 'happy', 'yes', 'agree', 'solved', 'perfect', 'success', 'done', 'fine', 'thanks', 'clear', 'resolved'];
+      const negativeWords = ['error', 'fail', 'bad', 'block', 'issue', 'wrong', 'no', 'delay', 'difficult', 'conflict', 'problem', 'stuck', 'failed'];
+
+      historyList.forEach(m => {
+        const transLines = m.transcript || [];
+        totalTranscriptLinesAll += transLines.length;
+        actionItemsCountAll += (m.actionItems || []).length;
+        
+        transLines.forEach(line => {
+          const textLower = (line.text || '').toLowerCase();
+          positiveWords.forEach(w => { if (textLower.includes(w)) positiveCountAll++; });
+          negativeWords.forEach(w => { if (textLower.includes(w)) negativeCountAll++; });
+        });
+      });
+      
+      let avgSentiment = 80;
+      if (positiveCountAll + negativeCountAll > 0) {
+        avgSentiment = Math.round((positiveCountAll / (positiveCountAll + negativeCountAll)) * 100);
+      }
+      avgSentiment = Math.max(60, Math.min(98, avgSentiment));
+      const avgEfficiency = Math.max(60, Math.min(98, 75 + (actionItemsCountAll * 3) - Math.floor(totalTranscriptLinesAll / 20)));
+
       // Calculate dynamic topics from all real meeting titles
       const allTitleWords = historyList.map(m => m.title.split(' ')).flat().filter(w => w.length > 4);
       const uniqueWords = Array.from(new Set(allTitleWords)).slice(0, 3);
@@ -2044,6 +2066,84 @@ export default function App() {
 
       if (dynamicTopics.length === 0) {
         dynamicTopics.push({ name: 'Workspace Tasks', count: 3, importance: 'high' as const });
+      }
+
+      // Aggregate speaker turns across ALL meetings
+      const allSpeakerTurns: { [name: string]: number } = {};
+      let grandTotalTurns = 0;
+      historyList.forEach(m => {
+        const lines = m.transcript || [];
+        lines.forEach(line => {
+          const spk = line.speaker || 'You (Host)';
+          allSpeakerTurns[spk] = (allSpeakerTurns[spk] || 0) + 1;
+          grandTotalTurns++;
+        });
+      });
+
+      const speakerColors = ['#50A3A4', '#FCAF38', '#F95335', '#674A40', '#8D6E63'];
+      const aggregatedSpeakers = Object.keys(allSpeakerTurns).map((spk, idx) => {
+        const pct = grandTotalTurns > 0 ? Math.round((allSpeakerTurns[spk] / grandTotalTurns) * 100) : 100;
+        return {
+          name: spk,
+          talkTime: Math.round(totalMinutes * (pct / 100)),
+          percentage: pct,
+          color: speakerColors[idx % speakerColors.length],
+          interruptions: Math.max(0, Math.round(pct / 8)),
+          clarity: 90 + (idx * 2) % 10
+        };
+      });
+      
+      if (aggregatedSpeakers.length === 0) {
+        aggregatedSpeakers.push({
+          name: username || 'You (Host)',
+          talkTime: totalMinutes || 10,
+          percentage: 100,
+          color: '#50A3A4',
+          interruptions: 0,
+          clarity: 95
+        });
+      }
+
+      // Calculate weekly frequency counts
+      const weekCounts = [0, 0, 0, 0];
+      const nowMs = Date.now();
+      historyList.forEach(m => {
+        const dateMs = new Date(m.date).getTime();
+        const diffDays = Math.floor((nowMs - dateMs) / (24 * 60 * 60 * 1000));
+        if (diffDays >= 0 && diffDays < 7) weekCounts[3]++;
+        else if (diffDays >= 7 && diffDays < 14) weekCounts[2]++;
+        else if (diffDays >= 14 && diffDays < 21) weekCounts[1]++;
+        else if (diffDays >= 21 && diffDays < 28) weekCounts[0]++;
+        else weekCounts[0]++;
+      });
+      const maxWeekCount = Math.max(...weekCounts, 1);
+      const weeklyFreq = [
+        { height: Math.max(20, Math.round((weekCounts[0] / maxWeekCount) * 180)), label: 'Wk 1', count: weekCounts[0] },
+        { height: Math.max(20, Math.round((weekCounts[1] / maxWeekCount) * 180)), label: 'Wk 2', count: weekCounts[1] },
+        { height: Math.max(20, Math.round((weekCounts[2] / maxWeekCount) * 180)), label: 'Wk 3', count: weekCounts[2] },
+        { height: Math.max(20, Math.round((weekCounts[3] / maxWeekCount) * 180)), label: 'Wk 4', count: weekCounts[3] }
+      ];
+
+      // Calculate productivity trends list
+      const sortedMeets = [...historyList].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      const last5 = sortedMeets.slice(-5);
+      const productivityTrends = last5.map((m, idx) => {
+        const mTranscript = m.transcript || [];
+        const mEfficiency = Math.max(60, Math.min(98, 75 + ((m.actionItems || []).length * 5) - Math.floor(mTranscript.length / 10)));
+        const y = Math.round(180 - (mEfficiency / 100) * 140);
+        const x = last5.length > 1 ? Math.round(idx * (400 / (last5.length - 1))) : 200;
+        return {
+          x,
+          y,
+          label: m.title.substring(0, 8) + (m.title.length > 8 ? '..' : '')
+        };
+      });
+      
+      if (productivityTrends.length === 0) {
+        productivityTrends.push(
+          { x: 0, y: 120, label: 'Start' },
+          { x: 400, y: 120, label: 'End' }
+        );
       }
 
       return {
@@ -2062,25 +2162,9 @@ export default function App() {
         efficiencyScore: avgEfficiency,
         efficiencyScoreTrend: 'Healthy collaboration',
         efficiencyScoreTrendDirection: 'up',
-        weeklyFrequency: [
-          { height: Math.min(180, Math.ceil(totalMeets * 15) + 30), label: 'Wk 1', count: Math.ceil(totalMeets * 0.25) },
-          { height: Math.min(180, Math.ceil(totalMeets * 25) + 40), label: 'Wk 2', count: Math.ceil(totalMeets * 0.35) },
-          { height: Math.min(180, Math.ceil(totalMeets * 12) + 20), label: 'Wk 3', count: Math.ceil(totalMeets * 0.20) },
-          { height: Math.min(180, Math.ceil(totalMeets * 18) + 30), label: 'Wk 4', count: Math.ceil(totalMeets * 0.20) },
-        ],
-        productivityTrends: [
-          { x: 0, y: 180 - Math.min(140, avgEfficiency), label: 'Sprint 1' },
-          { x: 100, y: 180 - Math.min(140, avgEfficiency + 5), label: 'Sprint 2' },
-          { x: 200, y: 180 - Math.min(140, avgEfficiency - 5), label: 'Sprint 3' },
-          { x: 300, y: 180 - Math.min(140, avgEfficiency + 10), label: 'Sprint 4' },
-          { x: 400, y: 180 - Math.min(140, avgEfficiency + 15), label: 'Sprint 5' },
-        ],
-        speakers: [
-          { name: username || 'You (Host)', talkTime: Math.round(totalMinutes * 0.4), percentage: 40, color: '#50A3A4', interruptions: 12, clarity: 94 },
-          { name: 'Sarah Miller', talkTime: Math.round(totalMinutes * 0.3), percentage: 30, color: '#FCAF38', interruptions: 5, clarity: 89 },
-          { name: 'David Chen', talkTime: Math.round(totalMinutes * 0.2), percentage: 20, color: '#F95335', interruptions: 18, clarity: 82 },
-          { name: 'System / AI Agent', talkTime: Math.round(totalMinutes * 0.1), percentage: 10, color: '#674A40', interruptions: 2, clarity: 98 },
-        ],
+        weeklyFrequency: weeklyFreq,
+        productivityTrends: productivityTrends,
+        speakers: aggregatedSpeakers,
         sentimentFlow: [
           { time: '0m', positive: 60, neutral: 35, negative: 5 },
           { time: '10m', positive: 75, neutral: 20, negative: 5 },
@@ -2155,10 +2239,14 @@ export default function App() {
     
     // Fallback if no transcript lines
     if (speakersList.length === 0) {
-      speakersList.push(
-        { name: username || 'You (Host)', talkTime: Math.round(meetingMins * 0.6), percentage: 60, color: '#50A3A4', interruptions: 2, clarity: 94 },
-        { name: 'Sarah Miller', talkTime: Math.round(meetingMins * 0.4), percentage: 40, color: '#FCAF38', interruptions: 1, clarity: 88 }
-      );
+      speakersList.push({
+        name: username || 'You (Host)',
+        talkTime: meetingMins,
+        percentage: 100,
+        color: '#50A3A4',
+        interruptions: 0,
+        clarity: 95
+      });
     }
     
     // 2. Perform sentiment analysis by counting positive/negative words in transcript
@@ -2227,6 +2315,23 @@ export default function App() {
       parsedTopics.push({ name: 'General Discussion', count: 3, importance: 'high' as const });
     }
 
+    // Spline segments sentiments curve
+    const segmentLength = Math.max(1, Math.floor(transcriptLines.length / 3));
+    const segmentSentiments = [80, 80, 80];
+    for (let seg = 0; seg < 3; seg++) {
+      const startIdx = seg * segmentLength;
+      const endIdx = Math.min(transcriptLines.length, (seg + 1) * segmentLength);
+      let segPos = 0, segNeg = 0;
+      for (let i = startIdx; i < endIdx; i++) {
+        const txt = (transcriptLines[i].text || '').toLowerCase();
+        positiveWords.forEach(w => { if (txt.includes(w)) segPos++; });
+        negativeWords.forEach(w => { if (txt.includes(w)) segNeg++; });
+      }
+      if (segPos + segNeg > 0) {
+        segmentSentiments[seg] = Math.round((segPos / (segPos + segNeg)) * 100);
+      }
+    }
+
     return {
       id: match.id,
       title: match.title,
@@ -2244,12 +2349,13 @@ export default function App() {
       efficiencyScoreTrend: `Scored by ${match.actionItems.length} action items`,
       efficiencyScoreTrendDirection: 'up',
       weeklyFrequency: [
-        { height: 150, label: 'Sprint', count: 1 }
+        { height: 180, label: 'Participants', count: match.participants || 1 },
+        { height: 120, label: 'Duration (m)', count: meetingMins }
       ],
       productivityTrends: [
-        { x: 0, y: 150, label: 'Start' },
-        { x: 200, y: 100, label: 'Mid' },
-        { x: 400, y: 50, label: 'End' }
+        { x: 0, y: Math.round(180 - (segmentSentiments[0] / 100) * 140), label: 'Start' },
+        { x: 200, y: Math.round(180 - (segmentSentiments[1] / 100) * 140), label: 'Mid' },
+        { x: 400, y: Math.round(180 - (segmentSentiments[2] / 100) * 140), label: 'End' }
       ],
       speakers: speakersList,
       sentimentFlow: [
