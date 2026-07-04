@@ -211,7 +211,29 @@ const AVATAR_LOGOS = [
   )
 ];
 
-interface MeetingAnalytics {
+
+export interface SpeakerAnalytics {
+  name: string;
+  talkTime: number;
+  percentage: number;
+  color: string;
+  interruptions: number;
+  clarity: number;
+}
+
+export interface TopicAnalytics {
+  name: string;
+  count: number;
+  importance: 'high' | 'medium' | 'low';
+}
+
+export interface InsightAnalytics {
+  title: string;
+  desc: string;
+  type: 'success' | 'warning' | 'info';
+}
+
+export interface MeetingAnalytics {
   id: string;
   title: string;
   date: string;
@@ -229,14 +251,12 @@ interface MeetingAnalytics {
   efficiencyScoreTrendDirection: 'up' | 'down';
   weeklyFrequency: { height: number; label: string; count: number }[];
   productivityTrends: { x: number; y: number; label: string }[];
-  speakers: { name: string; talkTime: number; percentage: number; color: string; interruptions: number; clarity: number }[];
+  speakers: SpeakerAnalytics[];
   sentimentFlow: { time: string; positive: number; neutral: number; negative: number }[];
   engagementScore: number;
-  topics: { name: string; count: number; importance: 'high' | 'medium' | 'low' }[];
-  insights: { title: string; desc: string; type: 'info' | 'warning' | 'success' }[];
+  topics: TopicAnalytics[];
+  insights: InsightAnalytics[];
 }
-
-;
 
 export default function App() {
   // Authentication State
@@ -4847,8 +4867,19 @@ export default function App() {
             ========================================== */}
         {currentTab === 'analytics' && (
           !isAuthenticated ? renderLockedFeaturePlaceholder("AI Analytics & Insights", "Get advanced productivity analytics, sentiment trends, speaker talk-time distribution, and AI-driven efficiency reports for all your workspace meetings.") : (() => {
+            if (historyList.length === 0) {
+              return (
+                <div className="analytics-container animate-fade-in" style={{ textAlign: 'center', padding: '5rem 2rem' }}>
+                  <div style={{ fontSize: '4.5rem', marginBottom: '1.5rem' }}>📊</div>
+                  <h2 style={{ fontSize: '1.6rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.75rem' }}>No Workspace Analytics</h2>
+                  <p style={{ color: 'var(--text-secondary)', maxWidth: '500px', margin: '0 auto', fontSize: '0.95rem', lineHeight: 1.6 }}>
+                    You haven't completed any meeting sessions yet. Once you host or join meetings in this workspace, your AI productivity trends, active speaker voice shares, and sentiment ratings will appear here.
+                  </p>
+                </div>
+              );
+            }
+
             const selectedData = getMeetingAnalytics(selectedMeetingAnalytics);
-            
             // Math for Spline productivity curve
             const prodPoints = selectedData.productivityTrends;
             const prodWidth = 400;
