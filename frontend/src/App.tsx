@@ -498,6 +498,31 @@ export default function App() {
   const [isCamOff, setIsCamOff] = useState<boolean>(false);
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
   const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [isE2EEEnabled, setIsE2EEEnabled] = useState<boolean>(false);
+
+  const encryptText = (text: string, key: string): string => {
+    if (!text || !key) return text;
+    const keyCodes = Array.from(key).map(c => c.charCodeAt(0));
+    const encryptedCodes = Array.from(text).map((c, i) => {
+      return c.charCodeAt(0) ^ keyCodes[i % keyCodes.length];
+    });
+    return 'E2EE-' + btoa(String.fromCharCode(...encryptedCodes));
+  };
+
+  const decryptText = (cipher: string, key: string): string => {
+    if (!cipher || !key || !cipher.startsWith('E2EE-')) return cipher;
+    try {
+      const base64 = cipher.replace('E2EE-', '');
+      const decoded = atob(base64);
+      const keyCodes = Array.from(key).map(c => c.charCodeAt(0));
+      const decryptedCodes = Array.from(decoded).map((c, i) => {
+        return c.charCodeAt(0) ^ keyCodes[i % keyCodes.length];
+      });
+      return String.fromCharCode(...decryptedCodes);
+    } catch {
+      return '[Decryption Failed]';
+    }
+  };
 
 
 
@@ -1434,12 +1459,28 @@ export default function App() {
         }
 
         const savedSession = localStorage.getItem('intellmeet_session');
+        const rToken = localStorage.getItem('intellmeet_refresh_token');
         if (savedSession) {
           const sessionData = JSON.parse(savedSession);
           setIsAuthenticated(true);
           setEmail(sessionData.email);
           setUsername(sessionData.name);
           setPosition(sessionData.position);
+
+          if (rToken) {
+            fetch(`${API_BASE_URL}/api/auth/refresh`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ refreshToken: rToken })
+            })
+            .then(res => res.json())
+            .then(data => {
+              if (data.token) {
+                localStorage.setItem('intellmeet_token', data.token);
+              }
+            })
+            .catch(err => console.log('Session refresh token call failed:', err));
+          }
         }
       }
     };
@@ -1633,6 +1674,9 @@ export default function App() {
         const data = await response.json();
         if (data.token && data.user) {
           localStorage.setItem('intellmeet_token', data.token);
+          if (data.refreshToken) {
+            localStorage.setItem('intellmeet_refresh_token', data.refreshToken);
+          }
           const sessionObj = { email: data.user.email, name: data.user.name, position: data.user.role || 'Student' };
           localStorage.setItem('intellmeet_session', JSON.stringify(sessionObj));
           setIsAuthenticated(true);
@@ -1709,6 +1753,9 @@ export default function App() {
         const data = await response.json();
         if (data.token && data.user) {
           localStorage.setItem('intellmeet_token', data.token);
+          if (data.refreshToken) {
+            localStorage.setItem('intellmeet_refresh_token', data.refreshToken);
+          }
           const sessionObj = { email: data.user.email, name: data.user.name, position: data.user.role || 'Student' };
           localStorage.setItem('intellmeet_session', JSON.stringify(sessionObj));
           setIsAuthenticated(true);
@@ -2475,10 +2522,12 @@ export default function App() {
   // Send Chat message
   const handleSendChat = () => {
     if (!chatInput.trim()) return;
+    const rawText = chatInput.trim();
+    const finalMsgText = isE2EEEnabled ? encryptText(rawText, activeMeetingPasscode || 'E2EEKEY') : rawText;
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
       sender: username,
-      text: chatInput.trim(),
+      text: finalMsgText,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       avatarLogoIndex: selectedAvatarIdx,
       recipient: chatTarget
@@ -4601,7 +4650,7 @@ export default function App() {
                             {chatMessages.filter(msg => pinnedChatIds.includes(msg.id)).map(msg => (
                               <div key={`pinned-${msg.id}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid rgba(0,0,0,0.05)', paddingBottom: '2px' }}>
                                 <div style={{ paddingRight: '12px' }}>
-                                  <strong>{msg.sender}:</strong> <span>{msg.text}</span>
+                                  <strong>{msg.sender}:</strong> <span>{msg.text.startsWith('E2EE-') ? decryptText(msg.text, activeMeetingPasscode || 'E2EEKEY') : msg.text}</span>
                                 </div>
                                 <button 
                                   style={{ background: 'none', border: 'none', color: 'var(--color-danger)', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 600, padding: 0 }}
@@ -4656,7 +4705,13 @@ export default function App() {
                                     {msg.sender === username ? `🔒 private chat with ${msg.recipient}` : `🔒 private chat from ${msg.sender}`}
                                   </div>
                                 )}
-                                <div className="message-text">{msg.text}</div>
+                                <div className="message-text">
+                                  {msg.text.startsWith('E2EE-') ? (
+                                    <span title={`Raw Ciphertext: ${msg.text}`}>🔒 {decryptText(msg.text, activeMeetingPasscode || 'E2EEKEY')}</span>
+                                  ) : (
+                                    msg.text
+                                  )}
+                                </div>
                               </div>
                             </div>
                           );
@@ -4664,27 +4719,33 @@ export default function App() {
                       </div>
                       
                       {/* Send Target Selector */}
-                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', backgroundColor: 'var(--bg-secondary)', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--color-border)' }}>
-                        <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Send to:</span>
-                        <select 
-                          style={{
-                            margin: 0, 
-                            padding: '2px 6px', 
-                            fontSize: '0.75rem', 
-                            borderRadius: '4px', 
-                            border: '1px solid var(--color-border)', 
-                            backgroundColor: 'var(--bg-primary)',
-                            color: 'var(--text-primary)',
-                            cursor: 'pointer'
-                          }}
-                          value={chatTarget}
-                          onChange={(e) => setChatTarget(e.target.value)}
-                        >
-                          <option value="Everyone">Everyone (Public)</option>
-                          {meetingParticipants.map(p => (
-                            <option key={p.userId || p.socketId} value={p.username}>{p.username} (Private)</option>
-                          ))}
-                        </select>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-secondary)', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--color-border)' }}>
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                          <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Send to:</span>
+                          <select 
+                            style={{
+                              margin: 0, 
+                              padding: '2px 6px', 
+                              fontSize: '0.75rem', 
+                              borderRadius: '4px', 
+                              border: '1px solid var(--color-border)', 
+                              backgroundColor: 'var(--bg-primary)',
+                              color: 'var(--text-primary)',
+                              cursor: 'pointer'
+                            }}
+                            value={chatTarget}
+                            onChange={(e) => setChatTarget(e.target.value)}
+                          >
+                            <option value="Everyone">Everyone (Public)</option>
+                            {meetingParticipants.map(p => (
+                              <option key={p.userId || p.socketId} value={p.username}>{p.username} (Private)</option>
+                            ))}
+                          </select>
+                        </div>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.7rem', cursor: 'pointer', color: isE2EEEnabled ? 'var(--color-teal)' : 'var(--text-secondary)', fontWeight: 600, margin: 0 }}>
+                          <input type="checkbox" checked={isE2EEEnabled} onChange={(e) => setIsE2EEEnabled(e.target.checked)} />
+                          🔒 E2EE Chat
+                        </label>
                       </div>
 
                       <div className="input-with-send" style={{ marginTop: 0 }}>
