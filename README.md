@@ -1,5 +1,8 @@
 # IntellMeet - AI-Powered Enterprise Meeting & Collaboration Platform
 
+🌐 **Live Application URL**: [https://intellmeet-ai-meet-frontend.vercel.app/](https://intellmeet-ai-meet-frontend.vercel.app/)  
+🛢️ **Production Backend API**: [https://intellmeet-ai-meet.onrender.com/](https://intellmeet-ai-meet.onrender.com/)
+
 IntellMeet is a modern, premium enterprise web application that integrates real-time WebRTC audio/video conferencing, collaborative canvas whiteboards, interactive Kanban board task management, and deep AI-driven analytics. 
 
 It is designed with strict performance optimizations, security principles, and robust database persistence.
