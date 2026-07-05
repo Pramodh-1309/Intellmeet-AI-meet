@@ -9,9 +9,11 @@ import './App.css';
 import { supabase, isSupabaseConfigured, saveSupabaseKeys, clearSupabaseKeys } from './supabase';
 import { io } from 'socket.io-client';
 
-const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? 'http://localhost:5000'
-  : window.location.origin;
+const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || (
+  window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:5000'
+    : window.location.origin
+);
 
 
 // TypeScript Interfaces
