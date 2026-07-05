@@ -451,6 +451,24 @@ export default function App() {
     }
   }, [isDarkMode]);
 
+  // Global keydown handler for accessibility (keyboard modal dismissal)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowAuthModal(false);
+        setShowJoinSetupModal(false);
+        setShowScheduleModal(false);
+        setPlaybackUrl(null);
+        setShowSupaConfig(false);
+        setConfirmModal(prev => ({ ...prev, show: false }));
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
   const toggleTheme = () => {
     setIsDarkMode(prev => !prev);
   };
@@ -3762,6 +3780,8 @@ export default function App() {
             className="theme-toggle-btn"
             onClick={toggleTheme}
             title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            aria-label={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            aria-pressed={isDarkMode}
             style={{
               background: 'none',
               border: 'none',
@@ -6008,6 +6028,8 @@ export default function App() {
                     style={{ width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                     onClick={() => setIsMuted(!isMuted)}
                     title={isMuted ? 'Unmute microphone' : 'Mute microphone'}
+                    aria-label={isMuted ? 'Unmute microphone' : 'Mute microphone'}
+                    aria-pressed={!isMuted}
                   >
                     {isMuted ? <MicOff size={16} /> : <Mic size={16} />}
                   </button>
@@ -6017,6 +6039,8 @@ export default function App() {
                     style={{ width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                     onClick={() => setIsCamOff(!isCamOff)}
                     title={isCamOff ? 'Turn camera on' : 'Turn camera off'}
+                    aria-label={isCamOff ? 'Turn camera on' : 'Turn camera off'}
+                    aria-pressed={!isCamOff}
                   >
                     {isCamOff ? <VideoOff size={16} /> : <Video size={16} />}
                   </button>
@@ -6026,6 +6050,7 @@ export default function App() {
                     style={{ width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                     onClick={playSoundTest}
                     title="Test speaker sound"
+                    aria-label="Test speaker sound"
                   >
                     <Volume2 size={16} />
                   </button>
