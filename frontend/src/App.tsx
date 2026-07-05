@@ -503,6 +503,120 @@ export default function App() {
     localStorage.setItem('intellmeet_session', JSON.stringify(sessionObj));
     localStorage.setItem('intellmeet_token', 'demo_user_jwt_token_2026');
     localStorage.setItem('intellmeet_refresh_token', 'demo_user_refresh_token_2026');
+
+    // Populate mock demo data for a rich, visual user experience conforming strictly to TypeScript models
+    const mockDemoTasks: Task[] = [
+      {
+        id: "task-demo-1",
+        title: "Implement OpenAI Whisper Transcription Stream",
+        description: "Integrate room audio stream segments with OpenAI Whisper API for real-time captioned transcription.",
+        status: "done",
+        priority: "high",
+        assignee: "Demo User",
+        reviewNotes: "Tested in high-latency channels; works under 250ms delay."
+      },
+      {
+        id: "task-demo-2",
+        title: "Redesign Room Video Grid Dynamic Responsive System",
+        description: "Optimize room layout flexbox grid to support 15+ concurrent WebRTC video streams and active screen shares.",
+        status: "in_progress",
+        priority: "medium",
+        assignee: "Sarah Jenkins"
+      },
+      {
+        id: "task-demo-3",
+        title: "Conduct OWASP Top 10 Security Audit",
+        description: "Audit JWT refresh token rotations, CSP configurations, rate-limiters, and E2EE Chat XOR encryptors.",
+        status: "todo",
+        priority: "high",
+        assignee: "David K."
+      },
+      {
+        id: "task-demo-4",
+        title: "Test Dynamic Audio-Mixing WebRTC Audio Context Layer",
+        description: "Combine client-side mic streams and system audio feeds into a single WebAudio recording node.",
+        status: "done",
+        priority: "low",
+        assignee: "Demo User"
+      }
+    ];
+
+    const mockDemoMeetings: ScheduledMeeting[] = [
+      {
+        id: "MEET-SPRINT-2026",
+        title: "Q3 Product Engineering Sprint Planning",
+        dateTime: new Date(Date.now() + 2 * 3600 * 1000).toISOString(),
+        host: "Demo User",
+        isHostJoined: false,
+        meetingType: "public",
+        recurrence: "weekly",
+        passcode: "998877",
+        invitedEmails: ["sarah@zidio.com", "david@zidio.com"],
+        responses: { "sarah@zidio.com": "accepted", "david@zidio.com": "pending" },
+        duration: 45,
+        isExpired: false
+      },
+      {
+        id: "MEET-SECURITY-AUDIT",
+        title: "OWASP Compliance Sync & Security Audit",
+        dateTime: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+        host: "David K.",
+        isHostJoined: false,
+        meetingType: "private",
+        recurrence: "none",
+        passcode: "123456",
+        invitedEmails: ["demo@intellmeet.com", "security@intellmeet.com"],
+        responses: { "demo@intellmeet.com": "accepted", "security@intellmeet.com": "pending" },
+        duration: 60,
+        isExpired: false
+      }
+    ];
+
+    const mockDemoHistory: MeetingHistory[] = [
+      {
+        id: "MEET-PAST-01",
+        title: "Initial Scaffold Architecture Alignment",
+        date: new Date(Date.now() - 3 * 24 * 3600 * 1000).toLocaleDateString(),
+        duration: "35 min",
+        participants: 3,
+        summary: "Aligned on Vite React + Tailwind frontend structure and Node Express signaling backend. Verified MongoDB schemas for user tokens and Kanban boards.",
+        actionItems: [
+          "Set up user model token schemas (Done)",
+          "Test WebRTC low-bandwidth mode controls (Done)"
+        ],
+        transcript: [
+          { id: "tr-1", speaker: "Demo User", text: "We need a clean directory separation.", time: "10:02" },
+          { id: "tr-2", speaker: "Sarah Jenkins", text: "Agreed. Frontend will be in Vite React.", time: "10:03" },
+          { id: "tr-3", speaker: "David K.", text: "I'll handle the MongoDB connection setup.", time: "10:05" }
+        ]
+      },
+      {
+        id: "MEET-PAST-02",
+        title: "OWASP & JWT Refresh Tokens Review",
+        date: new Date(Date.now() - 1 * 24 * 3600 * 1000).toLocaleDateString(),
+        duration: "50 min",
+        participants: 2,
+        summary: "Reviewed JWT rotation logic. Resolved edge cases where access tokens expires and triggers /refresh queries in the background. Audited CORS and CSP configurations.",
+        actionItems: [
+          "Verify cookie options in production (Pending)",
+          "Audit frontend token rotate failures (Done)"
+        ],
+        transcript: [
+          { id: "tr-4", speaker: "David K.", text: "The refresh token rotation is secure.", time: "14:15" },
+          { id: "tr-5", speaker: "Demo User", text: "Awesome, let's verify cookie settings.", time: "14:17" },
+          { id: "tr-6", speaker: "David K.", text: "Yes, we will restrict it to HttpOnly.", time: "14:20" }
+        ]
+      }
+    ];
+
+    setTasks(mockDemoTasks);
+    setScheduledMeetings(mockDemoMeetings);
+    setHistoryList(mockDemoHistory);
+
+    localStorage.setItem('intellmeet_tasks_v2', JSON.stringify(mockDemoTasks));
+    localStorage.setItem('intellmeet_scheduled_v2', JSON.stringify(mockDemoMeetings));
+    localStorage.setItem('intellmeet_history_v2', JSON.stringify(mockDemoHistory));
+
     addSessionLog('Demo User', 'login');
     setShowAuthModal(false);
   };
@@ -1844,6 +1958,11 @@ export default function App() {
       await supabase.auth.signOut();
     }
     localStorage.removeItem('intellmeet_session');
+    localStorage.removeItem('intellmeet_tasks_v2');
+    localStorage.removeItem('intellmeet_scheduled_v2');
+    localStorage.removeItem('intellmeet_history_v2');
+    localStorage.removeItem('intellmeet_refresh_token');
+    localStorage.removeItem('intellmeet_token');
     setIsAuthenticated(false);
     setEmail('');
     setPassword('');
@@ -1852,6 +1971,7 @@ export default function App() {
     setCustomPosition('');
     setTasks([]);
     setHistoryList([]);
+    setScheduledMeetings([]);
     setUserPhone('');
     setUserDob('');
     setProfilePhotoUrl('');
