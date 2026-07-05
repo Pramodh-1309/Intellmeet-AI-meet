@@ -493,6 +493,18 @@ export default function App() {
     });
   };
 
+  const handleLoginAsDemo = () => {
+    setIsAuthenticated(true);
+    setUsername('Demo User');
+    setPosition('Admin');
+    const sessionObj = { email: 'demo@intellmeet.com', name: 'Demo User', position: 'Admin' };
+    localStorage.setItem('intellmeet_session', JSON.stringify(sessionObj));
+    localStorage.setItem('intellmeet_token', 'demo_user_jwt_token_2026');
+    localStorage.setItem('intellmeet_refresh_token', 'demo_user_refresh_token_2026');
+    addSessionLog('Demo User', 'login');
+    setShowAuthModal(false);
+  };
+
   // Meeting Controls
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isCamOff, setIsCamOff] = useState<boolean>(false);
@@ -1399,7 +1411,7 @@ export default function App() {
             {description}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+        <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
           <button 
             className="btn btn-secondary button-3d" 
             onClick={() => {
@@ -1417,6 +1429,13 @@ export default function App() {
             }}
           >
             Sign Up
+          </button>
+          <button 
+            className="btn btn-secondary button-3d" 
+            onClick={handleLoginAsDemo}
+            style={{ backgroundColor: 'var(--color-teal)', color: 'white', border: 'none' }}
+          >
+            🔑 Demo User
           </button>
         </div>
       </div>
@@ -3710,6 +3729,9 @@ export default function App() {
               <button type="submit" className="btn btn-primary w-full mt-4">
                 {isRegisterMode ? 'Register & Verify' : 'Login to Workspace'}
               </button>
+              <button type="button" className="btn btn-secondary w-full mt-2" onClick={handleLoginAsDemo} style={{ backgroundColor: 'var(--color-teal)', color: 'white', border: 'none' }}>
+                🔑 Login as Demo User
+              </button>
             </form>
 
             <p className="auth-toggle">
@@ -4035,7 +4057,12 @@ export default function App() {
               <div>
                 <h1 className="workspace-title">{isAuthenticated ? `Welcome Back, ${username}!` : 'Welcome to IntellMeet!'}</h1>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
+                {!isAuthenticated && (
+                  <button className="btn btn-secondary button-3d animate-pulse" onClick={handleLoginAsDemo} style={{ backgroundColor: 'var(--color-teal)', color: 'white', border: 'none' }}>
+                    🔑 Demo User
+                  </button>
+                )}
                 <button className="btn btn-secondary button-3d" onClick={() => setShowScheduleModal(true)}>Schedule Meeting</button>
                 <button className="btn btn-primary button-3d" onClick={() => setShowJoinSetupModal(true)}>Start Instant Meeting</button>
               </div>
