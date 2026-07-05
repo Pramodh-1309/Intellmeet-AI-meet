@@ -1435,7 +1435,7 @@ export default function App() {
           <button 
             className="btn btn-secondary button-3d" 
             onClick={handleLoginAsDemo}
-            style={{ backgroundColor: 'var(--color-teal)', color: 'white', border: 'none' }}
+            style={{ backgroundColor: 'var(--accent)', color: 'var(--text-primary)', border: 'none', fontWeight: 'bold' }}
           >
             🔑 Demo User
           </button>
@@ -3731,7 +3731,7 @@ export default function App() {
               <button type="submit" className="btn btn-primary w-full mt-4">
                 {isRegisterMode ? 'Register & Verify' : 'Login to Workspace'}
               </button>
-              <button type="button" className="btn btn-secondary w-full mt-2" onClick={handleLoginAsDemo} style={{ backgroundColor: 'var(--color-teal)', color: 'white', border: 'none' }}>
+              <button type="button" className="btn btn-secondary w-full mt-2" onClick={handleLoginAsDemo} style={{ backgroundColor: 'var(--accent)', color: 'var(--text-primary)', border: 'none', fontWeight: 'bold' }}>
                 🔑 Login as Demo User
               </button>
             </form>
@@ -4061,7 +4061,7 @@ export default function App() {
               </div>
               <div className="flex gap-2 flex-wrap">
                 {!isAuthenticated && (
-                  <button className="btn btn-secondary button-3d animate-pulse" onClick={handleLoginAsDemo} style={{ backgroundColor: 'var(--color-teal)', color: 'white', border: 'none' }}>
+                  <button className="btn btn-secondary button-3d animate-pulse" onClick={handleLoginAsDemo} style={{ backgroundColor: 'var(--accent)', color: 'var(--text-primary)', border: 'none', fontWeight: 'bold' }}>
                     🔑 Demo User
                   </button>
                 )}
@@ -4446,7 +4446,7 @@ export default function App() {
                       alignItems: 'center', 
                       justifyContent: 'center',
                       overflow: 'hidden',
-                      border: '2px solid var(--color-teal)'
+                      border: '2px solid var(--color-primary)'
                     }}>
                       <video 
                         ref={(el) => {
@@ -4663,7 +4663,7 @@ export default function App() {
                       {pinnedChatIds.length > 0 && (
                         <div style={{
                           backgroundColor: 'rgba(80, 163, 164, 0.08)',
-                          border: '1px solid var(--color-teal)',
+                          border: '1px solid var(--color-primary)',
                           borderRadius: '8px',
                           padding: '0.6rem 0.75rem',
                           fontSize: '0.75rem',
@@ -4672,7 +4672,7 @@ export default function App() {
                           gap: '0.35rem',
                           boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
                         }}>
-                          <strong style={{ color: 'var(--color-teal)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <strong style={{ color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                             📌 Pinned Chats ({pinnedChatIds.length})
                           </strong>
                           <div style={{ maxHeight: '100px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
@@ -4716,7 +4716,7 @@ export default function App() {
                                   <span>{msg.sender} <span style={{fontSize: '0.65rem', color: 'var(--text-muted)'}}>{msg.time}</span></span>
                                   {/* Pin button */}
                                   <button 
-                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: pinnedChatIds.includes(msg.id) ? 'var(--color-teal)' : 'var(--text-muted)', fontSize: '0.75rem', display: 'flex', alignItems: 'center' }}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: pinnedChatIds.includes(msg.id) ? 'var(--color-primary)' : 'var(--text-muted)', fontSize: '0.75rem', display: 'flex', alignItems: 'center' }}
                                     onClick={() => {
                                       if (pinnedChatIds.includes(msg.id)) {
                                         setPinnedChatIds(prev => prev.filter(id => id !== msg.id));
@@ -4771,7 +4771,7 @@ export default function App() {
                             ))}
                           </select>
                         </div>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.7rem', cursor: 'pointer', color: isE2EEEnabled ? 'var(--color-teal)' : 'var(--text-secondary)', fontWeight: 600, margin: 0 }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.7rem', cursor: 'pointer', color: isE2EEEnabled ? 'var(--color-primary)' : 'var(--text-secondary)', fontWeight: 600, margin: 0 }}>
                           <input type="checkbox" checked={isE2EEEnabled} onChange={(e) => setIsE2EEEnabled(e.target.checked)} />
                           🔒 E2EE Chat
                         </label>
@@ -4895,12 +4895,12 @@ export default function App() {
                             </div>
                             <div>
                               <div style={{ fontSize: '0.825rem', fontWeight: 600, color: 'var(--text-primary)' }}>{username}</div>
-                              <div style={{ fontSize: '0.65rem', color: 'var(--color-teal)', fontWeight: 600 }}>Host (You)</div>
+                              <div style={{ fontSize: '0.65rem', color: 'var(--color-primary)', fontWeight: 600 }}>Host (You)</div>
                             </div>
                           </div>
                           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            {isMuted ? <MicOff size={16} style={{ color: 'var(--color-danger)' }} /> : <Mic size={16} style={{ color: 'var(--color-teal)' }} />}
-                            {isCamOff ? <VideoOff size={16} style={{ color: 'var(--color-danger)' }} /> : <Video size={16} style={{ color: 'var(--color-teal)' }} />}
+                            {isMuted ? <MicOff size={16} style={{ color: 'var(--color-danger)' }} /> : <Mic size={16} style={{ color: 'var(--color-primary)' }} />}
+                            {isCamOff ? <VideoOff size={16} style={{ color: 'var(--color-danger)' }} /> : <Video size={16} style={{ color: 'var(--color-primary)' }} />}
                           </div>
                         </div>
 
@@ -4925,8 +4925,8 @@ export default function App() {
                               </div>
                             </div>
                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                              {p.isMuted ? <MicOff size={16} style={{ color: 'var(--color-danger)' }} /> : <Mic size={16} style={{ color: 'var(--color-teal)' }} />}
-                              {p.isCamOff ? <VideoOff size={16} style={{ color: 'var(--color-danger)' }} /> : <Video size={16} style={{ color: 'var(--color-teal)' }} />}
+                              {p.isMuted ? <MicOff size={16} style={{ color: 'var(--color-danger)' }} /> : <Mic size={16} style={{ color: 'var(--color-primary)' }} />}
+                              {p.isCamOff ? <VideoOff size={16} style={{ color: 'var(--color-danger)' }} /> : <Video size={16} style={{ color: 'var(--color-primary)' }} />}
                             </div>
                           </div>
                         ))}
