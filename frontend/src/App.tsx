@@ -451,6 +451,24 @@ export default function App() {
     }
   }, [isDarkMode]);
 
+  // Global keydown handler for accessibility (keyboard modal dismissal)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowAuthModal(false);
+        setShowJoinSetupModal(false);
+        setShowScheduleModal(false);
+        setPlaybackUrl(null);
+        setShowSupaConfig(false);
+        setConfirmModal(prev => ({ ...prev, show: false }));
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
   const toggleTheme = () => {
     setIsDarkMode(prev => !prev);
   };
