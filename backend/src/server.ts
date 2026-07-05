@@ -6,6 +6,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
+import path from 'path';
 import apiRoutes from './routes';
 import { errorHandler } from './middleware/errorHandler';
 
@@ -22,9 +23,13 @@ const io = new Server(server, {
   }
 });
 
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Rate Limiting
 const limiter = rateLimit({
@@ -123,6 +128,19 @@ app.post('/api/send-otp', async (req: any, res: any) => {
 
 app.use(errorHandler);
 
+// Redis client configuration (mock if Redis is offline/not configured)
+let redisClient: any = null;
+if (process.env.REDIS_URL) {
+  try {
+    const Redis = require('ioredis');
+    redisClient = new Redis(process.env.REDIS_URL);
+    redisClient.on('connect', () => console.log('Redis connected successfully'));
+    redisClient.on('error', (err: any) => console.warn('Redis connection error:', err));
+  } catch (err) {
+    console.warn('Redis connection helper initialized but server not connected:', err);
+  }
+}
+
 // Keep track of active rooms and their participants in-memory
 const activeRooms = new Map<string, Map<string, {
   socketId: string;
@@ -155,10 +173,18 @@ io.on('connection', (socket) => {
       activeRooms.set(roomId, new Map());
     }
     const room = activeRooms.get(roomId)!;
-    room.set(socket.id, {
+    const participantData = {
       socketId: socket.id,
       ...participantInfo
-    });
+    };
+    room.set(socket.id, participantData);
+
+    if (redisClient) {
+      const redisKey = `room:${roomId}:users`;
+      redisClient.hset(redisKey, socket.id, JSON.stringify(participantData))
+        .catch((err: any) => console.warn("Redis hset failed:", err));
+      redisClient.expire(redisKey, 86400).catch(() => {});
+    }
 
     console.log(`User ${participantInfo.username} joined room ${roomId}`);
 
@@ -174,6 +200,13 @@ io.on('connection', (socket) => {
       if (participant) {
         participant.isMuted = mediaState.isMuted;
         participant.isCamOff = mediaState.isCamOff;
+        
+        if (redisClient) {
+          const redisKey = `room:${currentRoomId}:users`;
+          redisClient.hset(redisKey, socket.id, JSON.stringify(participant))
+            .catch((err: any) => console.warn("Redis update media failed:", err));
+        }
+
         io.to(currentRoomId).emit('room-users', Array.from(room.values()));
       }
     }
@@ -189,17 +222,46 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('notes-updated', notes);
   });
 
+  // WebRTC Signaling relays
+  socket.on('webrtc-offer', (payload: { toSocketId: string; offer: any }) => {
+    io.to(payload.toSocketId).emit('webrtc-offer', {
+      fromSocketId: socket.id,
+      offer: payload.offer
+    });
+  });
+
+  socket.on('webrtc-answer', (payload: { toSocketId: string; answer: any }) => {
+    io.to(payload.toSocketId).emit('webrtc-answer', {
+      fromSocketId: socket.id,
+      answer: payload.answer
+    });
+  });
+
+  socket.on('webrtc-ice-candidate', (payload: { toSocketId: string; candidate: any }) => {
+    io.to(payload.toSocketId).emit('webrtc-ice-candidate', {
+      fromSocketId: socket.id,
+      candidate: payload.candidate
+    });
+  });
+
   // Disconnect Handler
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
-    if (currentRoomId && activeRooms.has(currentRoomId)) {
-      const room = activeRooms.get(currentRoomId)!;
-      room.delete(socket.id);
-      
-      if (room.size === 0) {
-        activeRooms.delete(currentRoomId);
-      } else {
-        io.to(currentRoomId).emit('room-users', Array.from(room.values()));
+    if (currentRoomId) {
+      if (redisClient) {
+        redisClient.hdel(`room:${currentRoomId}:users`, socket.id)
+          .catch((err: any) => console.warn("Redis disconnect hdel failed:", err));
+      }
+
+      if (activeRooms.has(currentRoomId)) {
+        const room = activeRooms.get(currentRoomId)!;
+        room.delete(socket.id);
+        
+        if (room.size === 0) {
+          activeRooms.delete(currentRoomId);
+        } else {
+          io.to(currentRoomId).emit('room-users', Array.from(room.values()));
+        }
       }
     }
   });

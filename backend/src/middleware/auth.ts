@@ -19,3 +19,17 @@ export const authMiddleware = (req: AuthRequest, res: Response, next: NextFuncti
     res.status(401).json({ message: 'Invalid token.' });
   }
 };
+
+export const requireRole = (allowedRoles: string[]) => {
+  return (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({ message: 'Access Denied: Unauthorized request.' });
+    }
+    const userRole = (req.user.role || '').toLowerCase().trim();
+    const isAllowed = allowedRoles.some(r => r.toLowerCase().trim() === userRole);
+    if (!isAllowed) {
+      return res.status(403).json({ message: `Access Denied: Required role not met. Your role: "${req.user.role}"` });
+    }
+    next();
+  };
+};

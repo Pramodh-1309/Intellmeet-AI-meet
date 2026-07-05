@@ -1,0 +1,39 @@
+name: CI Build Checks
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      mongodb:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: 18
+
+    - name: Install dependencies and compile Backend
+      run: |
+        cd backend
+        npm install
+        npm run build
+        npm test
+
+    - name: Install dependencies and compile Frontend
+      run: |
+        cd frontend
+        npm install
+        npm run build
