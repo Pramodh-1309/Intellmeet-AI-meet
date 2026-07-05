@@ -43,9 +43,11 @@ We have checked our implemented system against every specification in the **Zidi
 
 ---
 
-## 3. High-Performance Add-on Features Included
-1.  **Low-Bandwidth Mode**: Drops canvas updates down to 2 FPS on slow networks, drastically reducing CPU/GPU overhead.
-2.  **Screen Share Loopback Fix**: Implemented `selfBrowserSurface: "exclude"` to stop recursive "hall of mirrors" screen sharing loops.
+## 3. High-Performance & Guest Access Features Included
+1.  **Core Guest Access (No Signup Required)**: Core features like scheduling a meeting, entering standard rooms, real-time video/audio streams, E2EE chat, live captive transcription, and collaborative whiteboard pages are completely accessible to guest/unauthenticated profiles.
+2.  **Instant "Demo User" Bypass (One-Click Full Unlock)**: Added a dedicated `🔑 Demo User` button in three prominent places: the main workspace header (when logged out), the premium lock placeholders cards (Kanban, Analytics, past meetings), and the login modal. Clicking it instantly authenticates the user as a Demo Admin, granting total access to advanced boards and workspace analytics.
+3.  **Low-Bandwidth Mode**: Drops canvas updates down to 2 FPS on slow networks, drastically reducing CPU/GPU overhead.
+4.  **Screen Share Loopback Fix**: Implemented `selfBrowserSurface: "exclude"` to stop recursive "hall of mirrors" screen sharing loops.
 3.  **Client-Side Captcha Validation**: Safeguards login security without relying on complex SMTP services.
 
 ---
