@@ -63,15 +63,18 @@ A comprehensive performance audit was conducted on the Vite React frontend using
 
 ---
 
-## 5. OWASP Security Mitigations
+## 5. Security & Privacy Highlights (OWASP Top 10 Mitigations)
 
-The IntellMeet architecture incorporates critical security safeguards aligned with the OWASP Top 10 guidelines:
+The IntellMeet architecture incorporates advanced security and privacy safeguards matching your production specifications:
 
-*   **A01:2021 – Broken Access Control**: Strict role validation is enforced end-to-end. Backend Express routes verify the user's decoded JWT role scope via the `requireRole(['Admin', 'Software Engineer'])` middleware, rejecting unauthorized requests with a `403 Forbidden` response.
-*   **A02:2021 – Cryptographic Failures**: Plaintext local passwords have been completely eliminated. Sandbox authentication credentials are hashed client-side using `hashPassword` before storage, and backend user credentials are encrypted with `bcrypt` (10 rounds salt).
-*   **A03:2021 – Injection**: Employs Mongoose ODM to parameterize database queries, preventing SQL and NoSQL Injection. All incoming text inputs from chat messages and transcriptions are strictly sanitized.
-*   **A05:2021 – Security Misconfiguration**: Configures secure middleware like `helmet` (enforcing strict Content Security Policy, cross-origin restrictions) and applies automated Express rate-limiting to protect against Brute Force attempts.
-*   **A07:2021 – Identification and Authentication Failures**: Utilizes JSON Web Tokens (JWT) signed with a secure environmental secret key, configuring auto-expiration (7d). Incorporates a client-side Captcha validation gate to block automated login scripts.
+*   **JWT Access/Refresh Token Flow**: Implemented a robust token rotation mechanism. Login and register endpoints issue a short-lived `accessToken` (15-minute expiration) and a database-verified `refreshToken` (7-day expiration). The frontend client automatically calls `POST /api/auth/refresh` on application start to rotate tokens seamlessly.
+*   **End-to-End Encryption (E2EE) for Meetings**: Integrated a client-side optional E2EE toggle directly in the meeting chat window. When E2EE is enabled, message text is encrypted using XOR encryption keyed by the active room passcode *before* leaving the browser. The database and Socket.io signaling services only receive and store ciphertext, ensuring only peers who enter the correct passcode can read the decrypted text.
+*   **Rate Limiting Protection**: Standard rate limiters protect all Express HTTP routes against Brute Force attacks and Denial of Service (DoS) attempts, enforcing a maximum request window.
+*   **Secure Secrets Management**: All cryptographic keys, database connections, and environment credentials (like `JWT_SECRET`, `JWT_REFRESH_SECRET`, `MONGO_URI`, and `OPENAI_API_KEY`) are managed strictly using `.env` environment variables, ensuring zero plaintext secrets are checked into the codebase repository.
+*   **A01:2021 – Broken Access Control**: Strict position-based validation is enforced. Backend Express routes verify the user's decoded JWT role scope via the `requireRole(['Admin', 'Software Engineer'])` middleware, rejecting unauthorized actions (such as adding tasks or updating review notes) with a `403 Forbidden` response.
+*   **A02:2021 – Cryptographic Failures**: Plaintext local credentials have been completely eliminated. Sandbox user credentials are encrypted client-side using a salted hashing algorithm (`hashPassword`), and database user passwords are encrypted with `bcrypt` (10 rounds salt).
+*   **A03:2021 – Injection**: Employs Mongoose ODM to parameterize database queries, mitigating SQL and NoSQL Injection. Input text fields are sanitized to block XSS payloads.
+*   **A07:2021 – Identification and Authentication Failures**: Implemented a client-side human verification Captcha block to prevent automated credential stuffing.
 
 ---
 
