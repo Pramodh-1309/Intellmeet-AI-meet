@@ -1433,9 +1433,8 @@ export default function App() {
             Sign Up
           </button>
           <button 
-            className="btn btn-secondary button-3d" 
+            className="btn btn-primary button-3d" 
             onClick={handleLoginAsDemo}
-            style={{ backgroundColor: 'var(--accent)', color: 'var(--text-primary)', border: 'none', fontWeight: 'bold' }}
           >
             🔑 Demo User
           </button>
@@ -3731,7 +3730,7 @@ export default function App() {
               <button type="submit" className="btn btn-primary w-full mt-4">
                 {isRegisterMode ? 'Register & Verify' : 'Login to Workspace'}
               </button>
-              <button type="button" className="btn btn-secondary w-full mt-2" onClick={handleLoginAsDemo} style={{ backgroundColor: 'var(--accent)', color: 'var(--text-primary)', border: 'none', fontWeight: 'bold' }}>
+              <button type="button" className="btn btn-primary w-full mt-2" onClick={handleLoginAsDemo}>
                 🔑 Login as Demo User
               </button>
             </form>
@@ -4061,7 +4060,7 @@ export default function App() {
               </div>
               <div className="flex gap-2 flex-wrap">
                 {!isAuthenticated && (
-                  <button className="btn btn-secondary button-3d animate-pulse" onClick={handleLoginAsDemo} style={{ backgroundColor: 'var(--accent)', color: 'var(--text-primary)', border: 'none', fontWeight: 'bold' }}>
+                  <button className="btn btn-primary button-3d animate-pulse" onClick={handleLoginAsDemo}>
                     🔑 Demo User
                   </button>
                 )}
