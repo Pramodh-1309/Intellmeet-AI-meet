@@ -12,7 +12,7 @@ import { io } from 'socket.io-client';
 const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || (
   window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:5000'
-    : window.location.origin
+    : 'https://intellmeet-ai-meet.onrender.com'
 );
 
 
@@ -742,9 +742,7 @@ export default function App() {
       return;
     }
 
-    const backendUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-      ? 'http://localhost:5000'
-      : window.location.origin;
+    const backendUrl = API_BASE_URL;
 
     console.log('Connecting to meeting socket server:', backendUrl);
     
@@ -979,7 +977,7 @@ export default function App() {
       socketRef.current = null;
       setMeetingParticipants([]);
     };
-  }, [inActiveMeeting, meetingId]);
+  }, [inActiveMeeting, meetingId, isMeetingHost, username]);
 
   // Update Media state over sockets/channel
   useEffect(() => {
@@ -5243,7 +5241,7 @@ export default function App() {
                             </div>
                             <div>
                               <div style={{ fontSize: '0.825rem', fontWeight: 600, color: 'var(--text-primary)' }}>{username}</div>
-                              <div style={{ fontSize: '0.65rem', color: 'var(--color-primary)', fontWeight: 600 }}>Host (You)</div>
+                              <div style={{ fontSize: '0.65rem', color: 'var(--color-primary)', fontWeight: 600 }}>{isMeetingHost ? 'Host (You)' : 'Member (You)'}</div>
                             </div>
                           </div>
                           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
