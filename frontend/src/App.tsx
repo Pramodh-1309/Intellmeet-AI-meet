@@ -312,6 +312,12 @@ export default function App() {
   const [urlJoinPasscode, setUrlJoinPasscode] = useState<string>('');
   const [guestJoinName, setGuestJoinName] = useState<string>('');
 
+  // Waiting Room / Moderation States
+  const [isMeetingHost, setIsMeetingHost] = useState<boolean>(false);
+  const [isWaitingInRoom, setIsWaitingInRoom] = useState<boolean>(false);
+  const [waitingRoomMessage, setWaitingRoomMessage] = useState<string>('Waiting for the host to let you in...');
+  const [waitingRequests, setWaitingRequests] = useState<any[]>([]);
+
   // User Profile Settings & webcam states
   const [userPhone, setUserPhone] = useState<string>('');
   const [userDob, setUserDob] = useState<string>('');
@@ -817,8 +823,34 @@ export default function App() {
     };
 
     socket.on('connect', () => {
-      console.log('Connected to socket, joining room:', meetingId);
+      console.log('Connected to socket, host state:', isMeetingHost);
+      if (isMeetingHost) {
+        socket.emit('join-room', meetingId, participantInfo);
+      } else {
+        setIsWaitingInRoom(true);
+        setWaitingRoomMessage("Waiting for the host to admit you to the meeting...");
+        socket.emit('request-to-join', meetingId, participantInfo);
+      }
+    });
+
+    socket.on('join-request-received', (request: any) => {
+      console.log('Received join request from:', request);
+      setWaitingRequests(prev => {
+        if (prev.some(r => r.socketId === request.socketId)) return prev;
+        return [...prev, request];
+      });
+    });
+
+    socket.on('join-admitted', () => {
+      console.log('Host admitted us! Joining room now.');
+      setIsWaitingInRoom(false);
       socket.emit('join-room', meetingId, participantInfo);
+    });
+
+    socket.on('join-declined', () => {
+      console.log('Host declined our request.');
+      setWaitingRoomMessage("Your request to join was declined by the host.");
+      socket.disconnect();
     });
 
     socket.on('room-users', (users: any[]) => {
@@ -1464,6 +1496,9 @@ export default function App() {
       setUsername("Guest User");
     }
 
+    const isHost = match ? (match.host === (username || guestDisplayName.trim() || 'Guest User')) : true;
+    setIsMeetingHost(isHost);
+
     setMeetingTitle(match ? match.title : 'General Sync Room');
     setMeetingId(targetId);
     setActiveMeetingPasscode(match && match.passcode ? match.passcode : joinMeetPassInput.trim());
@@ -1506,6 +1541,9 @@ export default function App() {
       }
     }
     
+    const isHost = match ? (match.host === username) : false;
+    setIsMeetingHost(isHost);
+    
     setMeetingTitle(match ? match.title : 'General Sync Room');
     setMeetingId(urlJoinRoomId);
     setActiveMeetingPasscode(urlJoinPasscode || (match?.passcode) || '');
@@ -1536,6 +1574,9 @@ export default function App() {
       }
     }
     
+    const isHost = match ? (match.host === guestJoinName.trim()) : false;
+    setIsMeetingHost(isHost);
+
     setUsername(guestJoinName.trim());
     setGuestDisplayName(guestJoinName.trim());
     setMeetingTitle(match ? match.title : 'General Sync Room');
@@ -1547,6 +1588,20 @@ export default function App() {
     setUrlJoinRoomId(null);
     
     window.history.replaceState({}, document.title, window.location.pathname);
+  };
+
+  const handleAdmitUser = (targetSocketId: string) => {
+    if (socketRef.current) {
+      socketRef.current.emit('admit-user', targetSocketId);
+      setWaitingRequests(prev => prev.filter(r => r.socketId !== targetSocketId));
+    }
+  };
+
+  const handleDeclineUser = (targetSocketId: string) => {
+    if (socketRef.current) {
+      socketRef.current.emit('decline-user', targetSocketId);
+      setWaitingRequests(prev => prev.filter(r => r.socketId !== targetSocketId));
+    }
   };
 
   // Premium feature locked view generator
@@ -2831,11 +2886,13 @@ export default function App() {
         setMeetingTitle(match.title);
         setMeetingId(match.id);
         setActiveMeetingPasscode(match.passcode || '');
+        setIsMeetingHost(match.host === username);
       } else {
         generatedId = targetId;
         generatedPasscode = 'PASS-0000';
         setMeetingId(targetId);
         setActiveMeetingPasscode(generatedPasscode);
+        setIsMeetingHost(true);
       }
 
       if (isSupabaseConfigured() && supabase) {
@@ -2867,6 +2924,7 @@ export default function App() {
       setMeetingTitle(title || 'Instant Meeting');
       setMeetingId(generatedId);
       setActiveMeetingPasscode(generatedPasscode);
+      setIsMeetingHost(true);
 
       // Register so other participants can join this instant meet via ID/Passcode
       await registerInstantMeeting(generatedId, generatedPasscode, title || 'Instant Meeting');
@@ -4019,6 +4077,91 @@ export default function App() {
   };
 
 
+
+  if (isWaitingInRoom) {
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        width: '100vw',
+        backgroundColor: 'var(--bg-secondary)',
+        color: 'var(--text-primary)',
+        padding: '2rem',
+        textAlign: 'center',
+        fontFamily: 'var(--font-primary, system-ui)'
+      }}>
+        <style>{`
+          @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+          }
+          @keyframes slideDown {
+            from { transform: translate(-50%, -30px); opacity: 0; }
+            to { transform: translate(-50%, 0); opacity: 1; }
+          }
+        `}</style>
+        <div className="effect-3d" style={{
+          backgroundColor: 'var(--bg-primary)',
+          border: '1px solid var(--color-border)',
+          borderRadius: '16px',
+          padding: '3rem 2rem',
+          maxWidth: '480px',
+          boxShadow: 'var(--shadow-lg)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '1.5rem'
+        }}>
+          {/* Animated Spinner/Pulsing Hourglass */}
+          <div style={{
+            width: '80px',
+            height: '80px',
+            borderRadius: '50%',
+            backgroundColor: 'rgba(80, 163, 164, 0.1)',
+            color: 'var(--color-primary)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '2.5rem',
+            animation: 'pulse 2s infinite'
+          }}>
+            ⏳
+          </div>
+          
+          <h2 style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>Waiting Room</h2>
+          
+          <p style={{ fontSize: '1rem', color: 'var(--text-secondary)', lineHeight: '1.5', margin: 0 }}>
+            {waitingRoomMessage}
+          </p>
+
+          <div style={{ width: '100%', height: '1px', backgroundColor: 'var(--color-border)' }} />
+          
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0 }}>
+            Meeting ID: <strong>{meetingId}</strong><br/>
+            Joining as: <strong>{username}</strong>
+          </p>
+
+          <button 
+            className="btn btn-secondary w-full button-3d" 
+            style={{ marginTop: '0.5rem' }}
+            onClick={() => {
+              setIsWaitingInRoom(false);
+              setInActiveMeeting(false);
+              if (socketRef.current) {
+                socketRef.current.disconnect();
+              }
+            }}
+          >
+            Cancel and Leave
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app-container">
@@ -6751,6 +6894,68 @@ export default function App() {
                 </p>
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {/* Host Moderation: Waiting Room Requests banner */}
+      {isMeetingHost && waitingRequests.length > 0 && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 5000,
+          backgroundColor: 'var(--bg-primary)',
+          border: '2px solid var(--color-primary, #50a3a4)',
+          borderRadius: '12px',
+          boxShadow: 'var(--shadow-lg)',
+          padding: '1rem 1.5rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.75rem',
+          maxWidth: '450px',
+          width: '90%',
+          animation: 'slideDown 0.3s ease-out'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '1.25rem' }}>👤</span>
+            <span style={{ fontWeight: 'bold', color: 'var(--text-primary)', fontSize: '0.95rem' }}>
+              {waitingRequests.length} user{waitingRequests.length > 1 ? 's' : ''} waiting to join
+            </span>
+          </div>
+          
+          <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {waitingRequests.map((req) => (
+              <div key={req.socketId} style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                backgroundColor: 'var(--bg-secondary)',
+                padding: '0.5rem 0.75rem',
+                borderRadius: '8px',
+                border: '1px solid var(--color-border)'
+              }}>
+                <span style={{ fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+                  {req.username}
+                </span>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button 
+                    className="btn btn-secondary btn-sm" 
+                    style={{ padding: '0.25rem 0.5rem', minWidth: 'auto', backgroundColor: 'var(--color-danger, #f43f5e)', color: '#fff' }}
+                    onClick={() => handleDeclineUser(req.socketId)}
+                  >
+                    Decline
+                  </button>
+                  <button 
+                    className="btn btn-primary btn-sm" 
+                    style={{ padding: '0.25rem 0.5rem', minWidth: 'auto', color: '#fff' }}
+                    onClick={() => handleAdmitUser(req.socketId)}
+                  >
+                    Admit
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

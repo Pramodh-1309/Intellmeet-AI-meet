@@ -222,6 +222,22 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('notes-updated', notes);
   });
 
+  // Waiting Room Handlers
+  socket.on('request-to-join', (roomId, userInfo) => {
+    socket.to(roomId).emit('join-request-received', {
+      socketId: socket.id,
+      ...userInfo
+    });
+  });
+
+  socket.on('admit-user', (targetSocketId) => {
+    io.to(targetSocketId).emit('join-admitted');
+  });
+
+  socket.on('decline-user', (targetSocketId) => {
+    io.to(targetSocketId).emit('join-declined');
+  });
+
   // WebRTC Signaling relays
   socket.on('webrtc-offer', (payload: { toSocketId: string; offer: any }) => {
     io.to(payload.toSocketId).emit('webrtc-offer', {
