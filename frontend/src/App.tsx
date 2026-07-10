@@ -307,6 +307,11 @@ export default function App() {
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [showAccountMenu, setShowAccountMenu] = useState<boolean>(false);
 
+  // URL Sharing Invitation States
+  const [urlJoinRoomId, setUrlJoinRoomId] = useState<string | null>(null);
+  const [urlJoinPasscode, setUrlJoinPasscode] = useState<string>('');
+  const [guestJoinName, setGuestJoinName] = useState<string>('');
+
   // User Profile Settings & webcam states
   const [userPhone, setUserPhone] = useState<string>('');
   const [userDob, setUserDob] = useState<string>('');
@@ -1486,6 +1491,64 @@ export default function App() {
     }
   };
 
+  const handleJoinMeetingFromUrl = () => {
+    if (!urlJoinRoomId) return;
+    
+    const match = scheduledMeetings.find(m => m.id === urlJoinRoomId);
+    if (match) {
+      if (urlJoinPasscode && match.passcode && match.passcode !== urlJoinPasscode.trim()) {
+        alert("Invalid meeting passcode. Please try again.");
+        return;
+      }
+      if (isMeetingExpired(match)) {
+        alert("This meeting has expired.");
+        return;
+      }
+    }
+    
+    setMeetingTitle(match ? match.title : 'General Sync Room');
+    setMeetingId(urlJoinRoomId);
+    setActiveMeetingPasscode(urlJoinPasscode || (match?.passcode) || '');
+    setMeetingStartTime(Date.now());
+    setInActiveMeeting(true);
+    setCurrentTab('meeting');
+    setUrlJoinRoomId(null);
+    
+    window.history.replaceState({}, document.title, window.location.pathname);
+  };
+
+  const handleJoinMeetingAsGuestFromUrl = () => {
+    if (!urlJoinRoomId) return;
+    if (!guestJoinName.trim()) {
+      alert("Please enter your name to join.");
+      return;
+    }
+    
+    const match = scheduledMeetings.find(m => m.id === urlJoinRoomId);
+    if (match) {
+      if (urlJoinPasscode && match.passcode && match.passcode !== urlJoinPasscode.trim()) {
+        alert("Invalid meeting passcode. Please try again.");
+        return;
+      }
+      if (isMeetingExpired(match)) {
+        alert("This meeting has expired.");
+        return;
+      }
+    }
+    
+    setUsername(guestJoinName.trim());
+    setGuestDisplayName(guestJoinName.trim());
+    setMeetingTitle(match ? match.title : 'General Sync Room');
+    setMeetingId(urlJoinRoomId);
+    setActiveMeetingPasscode(urlJoinPasscode || (match?.passcode) || '');
+    setMeetingStartTime(Date.now());
+    setInActiveMeeting(true);
+    setCurrentTab('meeting');
+    setUrlJoinRoomId(null);
+    
+    window.history.replaceState({}, document.title, window.location.pathname);
+  };
+
   // Premium feature locked view generator
   const renderLockedFeaturePlaceholder = (featureName: string, description: string) => {
     return (
@@ -1616,6 +1679,17 @@ export default function App() {
             .catch(err => console.log('Session refresh token call failed:', err));
           }
         }
+      }
+
+      // Parse URL parameters for meeting invitations
+      const params = new URLSearchParams(window.location.search);
+      const joinRoom = params.get('join') || params.get('room');
+      const passcode = params.get('passcode') || params.get('pass') || '';
+      if (joinRoom) {
+        setUrlJoinRoomId(joinRoom);
+        setUrlJoinPasscode(passcode);
+        setJoinMeetIdInput(joinRoom);
+        setJoinMeetPassInput(passcode);
       }
     };
     checkSession();
@@ -3452,7 +3526,7 @@ export default function App() {
     // 1. Generate Link, ID, Passcode
     const generatedId = 'MEET-' + Math.random().toString(36).substr(2, 5).toUpperCase();
     const generatedPasscode = 'PASS-' + Math.floor(1000 + Math.random() * 9000);
-    const generatedLink = `http://localhost:3000/join/${generatedId}`;
+    const generatedLink = `${window.location.origin}/?join=${generatedId}&passcode=${generatedPasscode}`;
 
     // Parse invited emails
     const emailsList = schedInvitedEmails
@@ -4554,7 +4628,7 @@ export default function App() {
                   {activeMeetingPasscode && (
                     <span><b>Passcode:</b> {activeMeetingPasscode}</span>
                   )}
-                  <span><b>Join Link:</b> <a href={`http://localhost:3000/join/${meetingId}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>http://localhost:3000/join/{meetingId}</a></span>
+                  <span><b>Join Link:</b> <a href={`${window.location.origin}/?join=${meetingId}&passcode=${activeMeetingPasscode}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>{`${window.location.origin}/?join=${meetingId}&passcode=${activeMeetingPasscode}`}</a></span>
                 </div>
               </div>
               <button className="btn btn-danger button-3d" onClick={endMeeting}>Leave & Generate Summary</button>
@@ -6529,7 +6603,7 @@ export default function App() {
                 <div style={{ display: 'flex', flexDirection: 'column', padding: '0.5rem' }}>
                   <span style={{ color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Room Join Link:</span>
                   <span style={{ fontFamily: 'monospace', fontSize: '0.8rem', wordBreak: 'break-all', padding: '0.35rem', backgroundColor: '#f1f5f9', borderRadius: '4px' }}>
-                    {`http://localhost:3000/join/${lastScheduledMeet.id}`}
+                    {`${window.location.origin}/?join=${lastScheduledMeet.id}&passcode=${lastScheduledMeet.passcode}`}
                   </span>
                 </div>
               </div>
@@ -6593,6 +6667,93 @@ export default function App() {
 
       {/* Render Authentication Modal if needed */}
       {renderAuthModal()}
+
+      {/* Join Meeting from Shared URL Invitation Modal */}
+      {urlJoinRoomId && (
+        <div className="modal-overlay" style={{ zIndex: 3000 }}>
+          <div className="modal-content effect-3d" style={{ maxWidth: '420px', padding: '2.5rem', position: 'relative' }}>
+            <button 
+              className="btn btn-secondary" 
+              style={{ position: 'absolute', top: '15px', right: '15px', padding: '0.25rem 0.5rem', minWidth: 'auto' }} 
+              onClick={() => setUrlJoinRoomId(null)}
+            >
+              ✕
+            </button>
+            <div className="auth-logo">
+              <div className="auth-logo-icon">
+                <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: '100%' }}>
+                  <path d="M 18 42 A 32 32 0 0 0 27 70" stroke="var(--primary)" strokeWidth="13" strokeLinecap="round" />
+                  <path d="M 24 67 A 32 32 0 0 0 76 67" stroke="var(--accent)" strokeWidth="13" />
+                  <path d="M 73 70 A 32 32 0 0 0 82 42" stroke="var(--danger)" strokeWidth="13" strokeLinecap="round" />
+                  <rect x="42" y="38" width="16" height="42" rx="8" fill="var(--secondary)" />
+                  <circle cx="50" cy="22" r="7.5" fill="var(--secondary)" />
+                </svg>
+              </div>
+              <span className="logo-text" style={{color: 'var(--text-primary)'}}>IntellMeet</span>
+            </div>
+            
+            {isAuthenticated ? (
+              <div>
+                <h2 className="auth-title" style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Meeting Invitation</h2>
+                <p className="auth-subtitle" style={{ marginBottom: '1.5rem' }}>You have been invited to join an active meeting.</p>
+                <div style={{ padding: '1rem', backgroundColor: 'var(--bg-secondary)', borderRadius: '8px', border: '1px solid var(--color-border)', marginBottom: '1.5rem' }}>
+                  <p style={{ margin: '0 0 0.5rem 0', color: 'var(--text-secondary)' }}>Room ID: <strong>{urlJoinRoomId}</strong></p>
+                  <p style={{ margin: 0, color: 'var(--text-secondary)' }}>Join as: <strong>{username}</strong></p>
+                </div>
+                <div className="flex gap-2">
+                  <button className="btn btn-secondary w-full button-3d" onClick={() => setUrlJoinRoomId(null)}>Decline</button>
+                  <button className="btn btn-primary w-full button-3d" onClick={handleJoinMeetingFromUrl}>Join Room</button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <h2 className="auth-title" style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Join Meeting as Guest</h2>
+                <p className="auth-subtitle" style={{ marginBottom: '1.5rem' }}>Enter your details to join room <strong>{urlJoinRoomId}</strong></p>
+                
+                <div className="form-group" style={{ marginBottom: '1rem' }}>
+                  <label className="form-label">Your Full Name</label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    value={guestJoinName} 
+                    onChange={(e) => setGuestJoinName(e.target.value)} 
+                    placeholder="Enter your name to show other users" 
+                    required 
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                  <label className="form-label">Passcode</label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    value={urlJoinPasscode} 
+                    onChange={(e) => setUrlJoinPasscode(e.target.value)} 
+                    placeholder="Enter passcode if required" 
+                  />
+                </div>
+
+                <button className="btn btn-primary w-full button-3d" onClick={handleJoinMeetingAsGuestFromUrl}>
+                  Join Meeting Room
+                </button>
+                
+                <p style={{ textAlign: 'center', marginTop: '1.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  Have an account?{' '}
+                  <span 
+                    style={{ color: 'var(--color-primary)', cursor: 'pointer', fontWeight: 600 }}
+                    onClick={() => {
+                      setUrlJoinRoomId(null);
+                      setShowAuthModal(true);
+                    }}
+                  >
+                    Sign In
+                  </span>
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
     </div>
   );
