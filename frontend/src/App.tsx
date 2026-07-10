@@ -1822,7 +1822,13 @@ export default function App() {
         }
       } else {
         const errorData = await response.json().catch(() => ({}));
-        if (errorData.message && errorData.message !== 'Database connection error') {
+        const msg = (errorData.message || '').toLowerCase();
+        const isDbErr = msg.includes('database connection') || 
+                        msg.includes('buffercommands') || 
+                        msg.includes('connection is complete') || 
+                        msg.includes('mongodb') || 
+                        msg.includes('mongoose');
+        if (errorData.message && !isDbErr) {
           setAuthError(errorData.message);
           generateCaptcha();
           return;
@@ -1902,7 +1908,13 @@ export default function App() {
         }
       } else {
         const errorData = await response.json().catch(() => ({}));
-        if (errorData.message && errorData.message !== 'Database connection error') {
+        const msg = (errorData.message || '').toLowerCase();
+        const isDbErr = msg.includes('database connection') || 
+                        msg.includes('buffercommands') || 
+                        msg.includes('connection is complete') || 
+                        msg.includes('mongodb') || 
+                        msg.includes('mongoose');
+        if (errorData.message && !isDbErr) {
           setAuthError(errorData.message);
           return;
         }
