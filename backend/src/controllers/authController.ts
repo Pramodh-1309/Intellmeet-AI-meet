@@ -1,9 +1,15 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import { User } from '../models/User';
 
 export const signup = async (req: Request, res: Response) => {
+  // If database connection is not ready, return standard connection error to trigger local fallback
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({ message: 'Database connection error' });
+  }
+
   try {
     const { name, email, password, role } = req.body;
     const existing = await User.findOne({ email });
@@ -30,6 +36,11 @@ export const signup = async (req: Request, res: Response) => {
 };
 
 export const login = async (req: Request, res: Response) => {
+  // If database connection is not ready, return standard connection error to trigger local fallback
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({ message: 'Database connection error' });
+  }
+
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ email });
@@ -56,6 +67,11 @@ export const login = async (req: Request, res: Response) => {
 };
 
 export const refresh = async (req: Request, res: Response) => {
+  // If database connection is not ready, return standard connection error to trigger local fallback
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({ message: 'Database connection error' });
+  }
+
   try {
     const { refreshToken } = req.body;
     if (!refreshToken) return res.status(400).json({ message: 'Refresh token required' });
