@@ -224,7 +224,8 @@ io.on('connection', (socket) => {
 
   // Waiting Room Handlers
   socket.on('request-to-join', (roomId, userInfo) => {
-    socket.to(roomId).emit('join-request-received', {
+    console.log(`[Socket] Request to join room ${roomId} received from guest:`, userInfo.username);
+    io.to(roomId).emit('join-request-received', {
       socketId: socket.id,
       ...userInfo
     });
