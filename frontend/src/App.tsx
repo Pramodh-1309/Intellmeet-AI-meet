@@ -9,9 +9,11 @@ import './App.css';
 import { supabase, isSupabaseConfigured, saveSupabaseKeys, clearSupabaseKeys } from './supabase';
 import { io } from 'socket.io-client';
 
-const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? 'http://localhost:5000'
-  : window.location.origin;
+const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || (
+  window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:5000'
+    : 'https://intellmeet-ai-meet.onrender.com'
+);
 
 
 // TypeScript Interfaces
@@ -305,6 +307,18 @@ export default function App() {
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [showAccountMenu, setShowAccountMenu] = useState<boolean>(false);
 
+  // URL Sharing Invitation States
+  const [urlJoinRoomId, setUrlJoinRoomId] = useState<string | null>(null);
+  const [urlJoinPasscode, setUrlJoinPasscode] = useState<string>('');
+  const [guestJoinName, setGuestJoinName] = useState<string>('');
+
+  // Waiting Room / Moderation States
+  const [isMeetingHost, setIsMeetingHost] = useState<boolean>(false);
+  const [isWaitingInRoom, setIsWaitingInRoom] = useState<boolean>(false);
+  const [waitingRoomMessage, setWaitingRoomMessage] = useState<string>('Waiting for the host to let you in...');
+  const [waitingRequests, setWaitingRequests] = useState<any[]>([]);
+  const [socketStatus, setSocketStatus] = useState<string>('Connecting');
+
   // User Profile Settings & webcam states
   const [userPhone, setUserPhone] = useState<string>('');
   const [userDob, setUserDob] = useState<string>('');
@@ -493,11 +507,162 @@ export default function App() {
     });
   };
 
+  const handleLoginAsDemo = () => {
+    setIsAuthenticated(true);
+    setUsername('Demo User');
+    setPosition('Admin');
+    const sessionObj = { email: 'demo@intellmeet.com', name: 'Demo User', position: 'Admin' };
+    localStorage.setItem('intellmeet_session', JSON.stringify(sessionObj));
+    localStorage.setItem('intellmeet_token', 'demo_user_jwt_token_2026');
+    localStorage.setItem('intellmeet_refresh_token', 'demo_user_refresh_token_2026');
+
+    // Populate mock demo data for a rich, visual user experience conforming strictly to TypeScript models
+    const mockDemoTasks: Task[] = [
+      {
+        id: "task-demo-1",
+        title: "Implement OpenAI Whisper Transcription Stream",
+        description: "Integrate room audio stream segments with OpenAI Whisper API for real-time captioned transcription.",
+        status: "done",
+        priority: "high",
+        assignee: "Demo User",
+        reviewNotes: "Tested in high-latency channels; works under 250ms delay."
+      },
+      {
+        id: "task-demo-2",
+        title: "Redesign Room Video Grid Dynamic Responsive System",
+        description: "Optimize room layout flexbox grid to support 15+ concurrent WebRTC video streams and active screen shares.",
+        status: "in_progress",
+        priority: "medium",
+        assignee: "Sarah Jenkins"
+      },
+      {
+        id: "task-demo-3",
+        title: "Conduct OWASP Top 10 Security Audit",
+        description: "Audit JWT refresh token rotations, CSP configurations, rate-limiters, and E2EE Chat XOR encryptors.",
+        status: "todo",
+        priority: "high",
+        assignee: "David K."
+      },
+      {
+        id: "task-demo-4",
+        title: "Test Dynamic Audio-Mixing WebRTC Audio Context Layer",
+        description: "Combine client-side mic streams and system audio feeds into a single WebAudio recording node.",
+        status: "done",
+        priority: "low",
+        assignee: "Demo User"
+      }
+    ];
+
+    const mockDemoMeetings: ScheduledMeeting[] = [
+      {
+        id: "MEET-SPRINT-2026",
+        title: "Q3 Product Engineering Sprint Planning",
+        dateTime: new Date(Date.now() + 2 * 3600 * 1000).toISOString(),
+        host: "Demo User",
+        isHostJoined: false,
+        meetingType: "public",
+        recurrence: "weekly",
+        passcode: "998877",
+        invitedEmails: ["sarah@zidio.com", "david@zidio.com"],
+        responses: { "sarah@zidio.com": "accepted", "david@zidio.com": "pending" },
+        duration: 45,
+        isExpired: false
+      },
+      {
+        id: "MEET-SECURITY-AUDIT",
+        title: "OWASP Compliance Sync & Security Audit",
+        dateTime: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+        host: "David K.",
+        isHostJoined: false,
+        meetingType: "private",
+        recurrence: "none",
+        passcode: "123456",
+        invitedEmails: ["demo@intellmeet.com", "security@intellmeet.com"],
+        responses: { "demo@intellmeet.com": "accepted", "security@intellmeet.com": "pending" },
+        duration: 60,
+        isExpired: false
+      }
+    ];
+
+    const mockDemoHistory: MeetingHistory[] = [
+      {
+        id: "MEET-PAST-01",
+        title: "Initial Scaffold Architecture Alignment",
+        date: new Date(Date.now() - 3 * 24 * 3600 * 1000).toLocaleDateString(),
+        duration: "35 min",
+        participants: 3,
+        summary: "Aligned on Vite React + Tailwind frontend structure and Node Express signaling backend. Verified MongoDB schemas for user tokens and Kanban boards.",
+        actionItems: [
+          "Set up user model token schemas (Done)",
+          "Test WebRTC low-bandwidth mode controls (Done)"
+        ],
+        transcript: [
+          { id: "tr-1", speaker: "Demo User", text: "We need a clean directory separation.", time: "10:02" },
+          { id: "tr-2", speaker: "Sarah Jenkins", text: "Agreed. Frontend will be in Vite React.", time: "10:03" },
+          { id: "tr-3", speaker: "David K.", text: "I'll handle the MongoDB connection setup.", time: "10:05" }
+        ]
+      },
+      {
+        id: "MEET-PAST-02",
+        title: "OWASP & JWT Refresh Tokens Review",
+        date: new Date(Date.now() - 1 * 24 * 3600 * 1000).toLocaleDateString(),
+        duration: "50 min",
+        participants: 2,
+        summary: "Reviewed JWT rotation logic. Resolved edge cases where access tokens expires and triggers /refresh queries in the background. Audited CORS and CSP configurations.",
+        actionItems: [
+          "Verify cookie options in production (Pending)",
+          "Audit frontend token rotate failures (Done)"
+        ],
+        transcript: [
+          { id: "tr-4", speaker: "David K.", text: "The refresh token rotation is secure.", time: "14:15" },
+          { id: "tr-5", speaker: "Demo User", text: "Awesome, let's verify cookie settings.", time: "14:17" },
+          { id: "tr-6", speaker: "David K.", text: "Yes, we will restrict it to HttpOnly.", time: "14:20" }
+        ]
+      }
+    ];
+
+    setTasks(mockDemoTasks);
+    setScheduledMeetings(mockDemoMeetings);
+    setHistoryList(mockDemoHistory);
+
+    localStorage.setItem('intellmeet_tasks_v2', JSON.stringify(mockDemoTasks));
+    localStorage.setItem('intellmeet_scheduled_v2', JSON.stringify(mockDemoMeetings));
+    localStorage.setItem('intellmeet_history_v2', JSON.stringify(mockDemoHistory));
+
+    addSessionLog('Demo User', 'login');
+    setShowAuthModal(false);
+  };
+
   // Meeting Controls
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isCamOff, setIsCamOff] = useState<boolean>(false);
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
   const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [isE2EEEnabled, setIsE2EEEnabled] = useState<boolean>(false);
+
+  const encryptText = (text: string, key: string): string => {
+    if (!text || !key) return text;
+    const keyCodes = Array.from(key).map(c => c.charCodeAt(0));
+    const encryptedCodes = Array.from(text).map((c, i) => {
+      return c.charCodeAt(0) ^ keyCodes[i % keyCodes.length];
+    });
+    return 'E2EE-' + btoa(String.fromCharCode(...encryptedCodes));
+  };
+
+  const decryptText = (cipher: string, key: string): string => {
+    if (!cipher || !key || !cipher.startsWith('E2EE-')) return cipher;
+    try {
+      const base64 = cipher.replace('E2EE-', '');
+      const decoded = atob(base64);
+      const keyCodes = Array.from(key).map(c => c.charCodeAt(0));
+      const decryptedCodes = Array.from(decoded).map((c, i) => {
+        return c.charCodeAt(0) ^ keyCodes[i % keyCodes.length];
+      });
+      return String.fromCharCode(...decryptedCodes);
+    } catch {
+      return '[Decryption Failed]';
+    }
+  };
 
 
 
@@ -578,9 +743,7 @@ export default function App() {
       return;
     }
 
-    const backendUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-      ? 'http://localhost:5000'
-      : window.location.origin;
+    const backendUrl = API_BASE_URL;
 
     console.log('Connecting to meeting socket server:', backendUrl);
     
@@ -659,8 +822,45 @@ export default function App() {
     };
 
     socket.on('connect', () => {
-      console.log('Connected to socket, joining room:', meetingId);
+      console.log('Connected to socket, host state:', isMeetingHost);
+      setSocketStatus('Connected');
+      if (isMeetingHost) {
+        socket.emit('join-room', meetingId, participantInfo);
+      } else {
+        setIsWaitingInRoom(true);
+        setWaitingRoomMessage("Waiting for the host to admit you to the meeting...");
+        socket.emit('request-to-join', meetingId, participantInfo);
+      }
+    });
+
+    socket.on('connect_error', (err) => {
+      console.error('Socket connection error:', err);
+      setSocketStatus(`Error: ${err.message}`);
+    });
+
+    socket.on('disconnect', (reason) => {
+      console.log('Socket disconnected:', reason);
+      setSocketStatus(`Disconnected: ${reason}`);
+    });
+
+    socket.on('join-request-received', (request: any) => {
+      console.log('Received join request from:', request);
+      setWaitingRequests(prev => {
+        if (prev.some(r => r.socketId === request.socketId)) return prev;
+        return [...prev, request];
+      });
+    });
+
+    socket.on('join-admitted', () => {
+      console.log('Host admitted us! Joining room now.');
+      setIsWaitingInRoom(false);
       socket.emit('join-room', meetingId, participantInfo);
+    });
+
+    socket.on('join-declined', () => {
+      console.log('Host declined our request.');
+      setWaitingRoomMessage("Your request to join was declined by the host.");
+      socket.disconnect();
     });
 
     socket.on('room-users', (users: any[]) => {
@@ -788,8 +988,9 @@ export default function App() {
       socket.disconnect();
       socketRef.current = null;
       setMeetingParticipants([]);
+      setSocketStatus('Connecting');
     };
-  }, [inActiveMeeting, meetingId]);
+  }, [inActiveMeeting, meetingId, isMeetingHost, username]);
 
   // Update Media state over sockets/channel
   useEffect(() => {
@@ -1306,6 +1507,9 @@ export default function App() {
       setUsername("Guest User");
     }
 
+    const isHost = match ? (match.host === (username || guestDisplayName.trim() || 'Guest User')) : true;
+    setIsMeetingHost(isHost);
+
     setMeetingTitle(match ? match.title : 'General Sync Room');
     setMeetingId(targetId);
     setActiveMeetingPasscode(match && match.passcode ? match.passcode : joinMeetPassInput.trim());
@@ -1330,6 +1534,62 @@ export default function App() {
           return updated;
         });
       }
+    }
+  };
+
+
+
+  const handleJoinMeetingAsGuestFromUrl = () => {
+    if (!urlJoinRoomId) return;
+    if (!guestJoinName.trim()) {
+      alert("Please enter your name to join.");
+      return;
+    }
+    
+    const match = scheduledMeetings.find(m => m.id === urlJoinRoomId);
+    if (match) {
+      if (urlJoinPasscode && match.passcode && match.passcode !== urlJoinPasscode.trim()) {
+        alert("Invalid meeting passcode. Please try again.");
+        return;
+      }
+      if (isMeetingExpired(match)) {
+        alert("This meeting has expired.");
+        return;
+      }
+    }
+    
+    setIsMeetingHost(false);
+
+    setUsername(guestJoinName.trim());
+    setGuestDisplayName(guestJoinName.trim());
+    setMeetingTitle(match ? match.title : 'General Sync Room');
+    setMeetingId(urlJoinRoomId);
+    setActiveMeetingPasscode(urlJoinPasscode || (match?.passcode) || '');
+    
+    // Force Guest Mode (unauthenticated) so only the dashboard is accessible
+    setIsAuthenticated(false);
+
+    // Trigger Pre-Join Setup Modal
+    setActiveJoiningScheduledId(urlJoinRoomId);
+    setShowJoinSetupModal(true);
+    
+    // Close invitation modal
+    setUrlJoinRoomId(null);
+    
+    window.history.replaceState({}, document.title, window.location.pathname);
+  };
+
+  const handleAdmitUser = (targetSocketId: string) => {
+    if (socketRef.current) {
+      socketRef.current.emit('admit-user', targetSocketId);
+      setWaitingRequests(prev => prev.filter(r => r.socketId !== targetSocketId));
+    }
+  };
+
+  const handleDeclineUser = (targetSocketId: string) => {
+    if (socketRef.current) {
+      socketRef.current.emit('decline-user', targetSocketId);
+      setWaitingRequests(prev => prev.filter(r => r.socketId !== targetSocketId));
     }
   };
 
@@ -1374,7 +1634,7 @@ export default function App() {
             {description}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+        <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
           <button 
             className="btn btn-secondary button-3d" 
             onClick={() => {
@@ -1392,6 +1652,12 @@ export default function App() {
             }}
           >
             Sign Up
+          </button>
+          <button 
+            className="btn btn-primary button-3d" 
+            onClick={handleLoginAsDemo}
+          >
+            🔑 Demo User
           </button>
         </div>
       </div>
@@ -1434,13 +1700,40 @@ export default function App() {
         }
 
         const savedSession = localStorage.getItem('intellmeet_session');
+        const rToken = localStorage.getItem('intellmeet_refresh_token');
         if (savedSession) {
           const sessionData = JSON.parse(savedSession);
           setIsAuthenticated(true);
           setEmail(sessionData.email);
           setUsername(sessionData.name);
           setPosition(sessionData.position);
+
+          if (rToken) {
+            fetch(`${API_BASE_URL}/api/auth/refresh`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ refreshToken: rToken })
+            })
+            .then(res => res.json())
+            .then(data => {
+              if (data.token) {
+                localStorage.setItem('intellmeet_token', data.token);
+              }
+            })
+            .catch(err => console.log('Session refresh token call failed:', err));
+          }
         }
+      }
+
+      // Parse URL parameters for meeting invitations
+      const params = new URLSearchParams(window.location.search);
+      const joinRoom = params.get('join') || params.get('room');
+      const passcode = params.get('passcode') || params.get('pass') || '';
+      if (joinRoom) {
+        setUrlJoinRoomId(joinRoom);
+        setUrlJoinPasscode(passcode);
+        setJoinMeetIdInput(joinRoom);
+        setJoinMeetPassInput(passcode);
       }
     };
     checkSession();
@@ -1633,6 +1926,9 @@ export default function App() {
         const data = await response.json();
         if (data.token && data.user) {
           localStorage.setItem('intellmeet_token', data.token);
+          if (data.refreshToken) {
+            localStorage.setItem('intellmeet_refresh_token', data.refreshToken);
+          }
           const sessionObj = { email: data.user.email, name: data.user.name, position: data.user.role || 'Student' };
           localStorage.setItem('intellmeet_session', JSON.stringify(sessionObj));
           setIsAuthenticated(true);
@@ -1644,7 +1940,13 @@ export default function App() {
         }
       } else {
         const errorData = await response.json().catch(() => ({}));
-        if (errorData.message && errorData.message !== 'Database connection error') {
+        const msg = (errorData.message || '').toLowerCase();
+        const isDbErr = msg.includes('database connection') || 
+                        msg.includes('buffercommands') || 
+                        msg.includes('connection is complete') || 
+                        msg.includes('mongodb') || 
+                        msg.includes('mongoose');
+        if (errorData.message && !isDbErr) {
           setAuthError(errorData.message);
           generateCaptcha();
           return;
@@ -1709,6 +2011,9 @@ export default function App() {
         const data = await response.json();
         if (data.token && data.user) {
           localStorage.setItem('intellmeet_token', data.token);
+          if (data.refreshToken) {
+            localStorage.setItem('intellmeet_refresh_token', data.refreshToken);
+          }
           const sessionObj = { email: data.user.email, name: data.user.name, position: data.user.role || 'Student' };
           localStorage.setItem('intellmeet_session', JSON.stringify(sessionObj));
           setIsAuthenticated(true);
@@ -1721,7 +2026,13 @@ export default function App() {
         }
       } else {
         const errorData = await response.json().catch(() => ({}));
-        if (errorData.message && errorData.message !== 'Database connection error') {
+        const msg = (errorData.message || '').toLowerCase();
+        const isDbErr = msg.includes('database connection') || 
+                        msg.includes('buffercommands') || 
+                        msg.includes('connection is complete') || 
+                        msg.includes('mongodb') || 
+                        msg.includes('mongoose');
+        if (errorData.message && !isDbErr) {
           setAuthError(errorData.message);
           return;
         }
@@ -1777,6 +2088,11 @@ export default function App() {
       await supabase.auth.signOut();
     }
     localStorage.removeItem('intellmeet_session');
+    localStorage.removeItem('intellmeet_tasks_v2');
+    localStorage.removeItem('intellmeet_scheduled_v2');
+    localStorage.removeItem('intellmeet_history_v2');
+    localStorage.removeItem('intellmeet_refresh_token');
+    localStorage.removeItem('intellmeet_token');
     setIsAuthenticated(false);
     setEmail('');
     setPassword('');
@@ -1785,6 +2101,7 @@ export default function App() {
     setCustomPosition('');
     setTasks([]);
     setHistoryList([]);
+    setScheduledMeetings([]);
     setUserPhone('');
     setUserDob('');
     setProfilePhotoUrl('');
@@ -2475,10 +2792,12 @@ export default function App() {
   // Send Chat message
   const handleSendChat = () => {
     if (!chatInput.trim()) return;
+    const rawText = chatInput.trim();
+    const finalMsgText = isE2EEEnabled ? encryptText(rawText, activeMeetingPasscode || 'E2EEKEY') : rawText;
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
       sender: username,
-      text: chatInput.trim(),
+      text: finalMsgText,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       avatarLogoIndex: selectedAvatarIdx,
       recipient: chatTarget
@@ -2556,11 +2875,13 @@ export default function App() {
         setMeetingTitle(match.title);
         setMeetingId(match.id);
         setActiveMeetingPasscode(match.passcode || '');
+        setIsMeetingHost(match.host === username);
       } else {
         generatedId = targetId;
         generatedPasscode = 'PASS-0000';
         setMeetingId(targetId);
         setActiveMeetingPasscode(generatedPasscode);
+        setIsMeetingHost(true);
       }
 
       if (isSupabaseConfigured() && supabase) {
@@ -2592,6 +2913,7 @@ export default function App() {
       setMeetingTitle(title || 'Instant Meeting');
       setMeetingId(generatedId);
       setActiveMeetingPasscode(generatedPasscode);
+      setIsMeetingHost(true);
 
       // Register so other participants can join this instant meet via ID/Passcode
       await registerInstantMeeting(generatedId, generatedPasscode, title || 'Instant Meeting');
@@ -3251,7 +3573,7 @@ export default function App() {
     // 1. Generate Link, ID, Passcode
     const generatedId = 'MEET-' + Math.random().toString(36).substr(2, 5).toUpperCase();
     const generatedPasscode = 'PASS-' + Math.floor(1000 + Math.random() * 9000);
-    const generatedLink = `http://localhost:3000/join/${generatedId}`;
+    const generatedLink = `${window.location.origin}/?join=${generatedId}&passcode=${generatedPasscode}`;
 
     // Parse invited emails
     const emailsList = schedInvitedEmails
@@ -3661,6 +3983,9 @@ export default function App() {
               <button type="submit" className="btn btn-primary w-full mt-4">
                 {isRegisterMode ? 'Register & Verify' : 'Login to Workspace'}
               </button>
+              <button type="button" className="btn btn-primary w-full mt-2" onClick={handleLoginAsDemo}>
+                🔑 Login as Demo User
+              </button>
             </form>
 
             <p className="auth-toggle">
@@ -3741,6 +4066,91 @@ export default function App() {
   };
 
 
+
+  if (isWaitingInRoom) {
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        width: '100vw',
+        backgroundColor: 'var(--bg-secondary)',
+        color: 'var(--text-primary)',
+        padding: '2rem',
+        textAlign: 'center',
+        fontFamily: 'var(--font-primary, system-ui)'
+      }}>
+        <style>{`
+          @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+          }
+          @keyframes slideDown {
+            from { transform: translate(-50%, -30px); opacity: 0; }
+            to { transform: translate(-50%, 0); opacity: 1; }
+          }
+        `}</style>
+        <div className="effect-3d" style={{
+          backgroundColor: 'var(--bg-primary)',
+          border: '1px solid var(--color-border)',
+          borderRadius: '16px',
+          padding: '3rem 2rem',
+          maxWidth: '480px',
+          boxShadow: 'var(--shadow-lg)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '1.5rem'
+        }}>
+          {/* Animated Spinner/Pulsing Hourglass */}
+          <div style={{
+            width: '80px',
+            height: '80px',
+            borderRadius: '50%',
+            backgroundColor: 'rgba(80, 163, 164, 0.1)',
+            color: 'var(--color-primary)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '2.5rem',
+            animation: 'pulse 2s infinite'
+          }}>
+            ⏳
+          </div>
+          
+          <h2 style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>Waiting Room</h2>
+          
+          <p style={{ fontSize: '1rem', color: 'var(--text-secondary)', lineHeight: '1.5', margin: 0 }}>
+            {waitingRoomMessage}
+          </p>
+
+          <div style={{ width: '100%', height: '1px', backgroundColor: 'var(--color-border)' }} />
+          
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0 }}>
+            Meeting ID: <strong>{meetingId}</strong><br/>
+            Joining as: <strong>{username}</strong>
+          </p>
+
+          <button 
+            className="btn btn-secondary w-full button-3d" 
+            style={{ marginTop: '0.5rem' }}
+            onClick={() => {
+              setIsWaitingInRoom(false);
+              setInActiveMeeting(false);
+              if (socketRef.current) {
+                socketRef.current.disconnect();
+              }
+            }}
+          >
+            Cancel and Leave
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app-container">
@@ -3986,7 +4396,12 @@ export default function App() {
               <div>
                 <h1 className="workspace-title">{isAuthenticated ? `Welcome Back, ${username}!` : 'Welcome to IntellMeet!'}</h1>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
+                {!isAuthenticated && (
+                  <button className="btn btn-primary button-3d animate-pulse" onClick={handleLoginAsDemo}>
+                    🔑 Demo User
+                  </button>
+                )}
                 <button className="btn btn-secondary button-3d" onClick={() => setShowScheduleModal(true)}>Schedule Meeting</button>
                 <button className="btn btn-primary button-3d" onClick={() => setShowJoinSetupModal(true)}>Start Instant Meeting</button>
               </div>
@@ -4345,7 +4760,18 @@ export default function App() {
                   {activeMeetingPasscode && (
                     <span><b>Passcode:</b> {activeMeetingPasscode}</span>
                   )}
-                  <span><b>Join Link:</b> <a href={`http://localhost:3000/join/${meetingId}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>http://localhost:3000/join/{meetingId}</a></span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <span style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      backgroundColor: socketStatus === 'Connected' ? '#10b981' : (socketStatus.startsWith('Error') || socketStatus.startsWith('Disconnected') ? '#ef4444' : '#f59e0b'),
+                      display: 'inline-block',
+                      boxShadow: socketStatus === 'Connected' ? '0 0 8px #10b981' : (socketStatus.startsWith('Error') || socketStatus.startsWith('Disconnected') ? '0 0 8px #ef4444' : '0 0 8px #f59e0b')
+                    }} />
+                    <b>Signal:</b> {socketStatus}
+                  </span>
+                  <span><b>Join Link:</b> <a href={`${window.location.origin}/?join=${meetingId}&passcode=${activeMeetingPasscode}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>{`${window.location.origin}/?join=${meetingId}&passcode=${activeMeetingPasscode}`}</a></span>
                 </div>
               </div>
               <button className="btn btn-danger button-3d" onClick={endMeeting}>Leave & Generate Summary</button>
@@ -4368,7 +4794,7 @@ export default function App() {
                       alignItems: 'center', 
                       justifyContent: 'center',
                       overflow: 'hidden',
-                      border: '2px solid var(--color-teal)'
+                      border: '2px solid var(--color-primary)'
                     }}>
                       <video 
                         ref={(el) => {
@@ -4420,7 +4846,7 @@ export default function App() {
 
                       {/* Remote Participants */}
                       {meetingParticipants.map((p) => (
-                        <div key={p.userId || p.socketId} className={`video-feed ${!p.isMuted ? 'active-speaker' : ''} effect-3d`} style={{ height: '120px', minHeight: '120px', margin: 0 }}>
+                        <div key={p.socketId} className={`video-feed ${!p.isMuted ? 'active-speaker' : ''} effect-3d`} style={{ height: '120px', minHeight: '120px', margin: 0 }}>
                           {p.isCamOff ? (
                             <div className="user-avatar" style={{ width: '45px', height: '45px', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                               <div style={{ width: '45px', height: '45px' }}>
@@ -4469,7 +4895,7 @@ export default function App() {
 
                     {/* Real Remote Participants */}
                     {meetingParticipants.map((p) => (
-                      <div key={p.userId || p.socketId} className={`video-feed ${!p.isMuted ? 'active-speaker' : ''} effect-3d`}>
+                      <div key={p.socketId} className={`video-feed ${!p.isMuted ? 'active-speaker' : ''} effect-3d`}>
                         {p.isCamOff ? (
                           <div className="user-avatar" style={{ width: '80px', height: '80px', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <div style={{ width: '80px', height: '80px' }}>
@@ -4585,7 +5011,7 @@ export default function App() {
                       {pinnedChatIds.length > 0 && (
                         <div style={{
                           backgroundColor: 'rgba(80, 163, 164, 0.08)',
-                          border: '1px solid var(--color-teal)',
+                          border: '1px solid var(--color-primary)',
                           borderRadius: '8px',
                           padding: '0.6rem 0.75rem',
                           fontSize: '0.75rem',
@@ -4594,14 +5020,14 @@ export default function App() {
                           gap: '0.35rem',
                           boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
                         }}>
-                          <strong style={{ color: 'var(--color-teal)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <strong style={{ color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                             📌 Pinned Chats ({pinnedChatIds.length})
                           </strong>
                           <div style={{ maxHeight: '100px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                             {chatMessages.filter(msg => pinnedChatIds.includes(msg.id)).map(msg => (
                               <div key={`pinned-${msg.id}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid rgba(0,0,0,0.05)', paddingBottom: '2px' }}>
                                 <div style={{ paddingRight: '12px' }}>
-                                  <strong>{msg.sender}:</strong> <span>{msg.text}</span>
+                                  <strong>{msg.sender}:</strong> <span>{msg.text.startsWith('E2EE-') ? decryptText(msg.text, activeMeetingPasscode || 'E2EEKEY') : msg.text}</span>
                                 </div>
                                 <button 
                                   style={{ background: 'none', border: 'none', color: 'var(--color-danger)', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 600, padding: 0 }}
@@ -4638,7 +5064,7 @@ export default function App() {
                                   <span>{msg.sender} <span style={{fontSize: '0.65rem', color: 'var(--text-muted)'}}>{msg.time}</span></span>
                                   {/* Pin button */}
                                   <button 
-                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: pinnedChatIds.includes(msg.id) ? 'var(--color-teal)' : 'var(--text-muted)', fontSize: '0.75rem', display: 'flex', alignItems: 'center' }}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: pinnedChatIds.includes(msg.id) ? 'var(--color-primary)' : 'var(--text-muted)', fontSize: '0.75rem', display: 'flex', alignItems: 'center' }}
                                     onClick={() => {
                                       if (pinnedChatIds.includes(msg.id)) {
                                         setPinnedChatIds(prev => prev.filter(id => id !== msg.id));
@@ -4656,7 +5082,13 @@ export default function App() {
                                     {msg.sender === username ? `🔒 private chat with ${msg.recipient}` : `🔒 private chat from ${msg.sender}`}
                                   </div>
                                 )}
-                                <div className="message-text">{msg.text}</div>
+                                <div className="message-text">
+                                  {msg.text.startsWith('E2EE-') ? (
+                                    <span title={`Raw Ciphertext: ${msg.text}`}>🔒 {decryptText(msg.text, activeMeetingPasscode || 'E2EEKEY')}</span>
+                                  ) : (
+                                    msg.text
+                                  )}
+                                </div>
                               </div>
                             </div>
                           );
@@ -4664,27 +5096,33 @@ export default function App() {
                       </div>
                       
                       {/* Send Target Selector */}
-                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', backgroundColor: 'var(--bg-secondary)', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--color-border)' }}>
-                        <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Send to:</span>
-                        <select 
-                          style={{
-                            margin: 0, 
-                            padding: '2px 6px', 
-                            fontSize: '0.75rem', 
-                            borderRadius: '4px', 
-                            border: '1px solid var(--color-border)', 
-                            backgroundColor: 'var(--bg-primary)',
-                            color: 'var(--text-primary)',
-                            cursor: 'pointer'
-                          }}
-                          value={chatTarget}
-                          onChange={(e) => setChatTarget(e.target.value)}
-                        >
-                          <option value="Everyone">Everyone (Public)</option>
-                          {meetingParticipants.map(p => (
-                            <option key={p.userId || p.socketId} value={p.username}>{p.username} (Private)</option>
-                          ))}
-                        </select>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-secondary)', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--color-border)' }}>
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                          <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Send to:</span>
+                          <select 
+                            style={{
+                              margin: 0, 
+                              padding: '2px 6px', 
+                              fontSize: '0.75rem', 
+                              borderRadius: '4px', 
+                              border: '1px solid var(--color-border)', 
+                              backgroundColor: 'var(--bg-primary)',
+                              color: 'var(--text-primary)',
+                              cursor: 'pointer'
+                            }}
+                            value={chatTarget}
+                            onChange={(e) => setChatTarget(e.target.value)}
+                          >
+                            <option value="Everyone">Everyone (Public)</option>
+                            {meetingParticipants.map(p => (
+                              <option key={p.socketId} value={p.username}>{p.username} (Private)</option>
+                            ))}
+                          </select>
+                        </div>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.7rem', cursor: 'pointer', color: isE2EEEnabled ? 'var(--color-primary)' : 'var(--text-secondary)', fontWeight: 600, margin: 0 }}>
+                          <input type="checkbox" checked={isE2EEEnabled} onChange={(e) => setIsE2EEEnabled(e.target.checked)} />
+                          🔒 E2EE Chat
+                        </label>
                       </div>
 
                       <div className="input-with-send" style={{ marginTop: 0 }}>
@@ -4757,7 +5195,7 @@ export default function App() {
                           <option value="Everyone">Everyone</option>
                           <option value={username}>{username} (You)</option>
                           {meetingParticipants.map(p => (
-                            <option key={p.userId || p.socketId} value={p.username}>{p.username}</option>
+                            <option key={p.socketId} value={p.username}>{p.username}</option>
                           ))}
                         </select>
                       </div>
@@ -4805,18 +5243,18 @@ export default function App() {
                             </div>
                             <div>
                               <div style={{ fontSize: '0.825rem', fontWeight: 600, color: 'var(--text-primary)' }}>{username}</div>
-                              <div style={{ fontSize: '0.65rem', color: 'var(--color-teal)', fontWeight: 600 }}>Host (You)</div>
+                              <div style={{ fontSize: '0.65rem', color: 'var(--color-primary)', fontWeight: 600 }}>{isMeetingHost ? 'Host (You)' : 'Member (You)'}</div>
                             </div>
                           </div>
                           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            {isMuted ? <MicOff size={16} style={{ color: 'var(--color-danger)' }} /> : <Mic size={16} style={{ color: 'var(--color-teal)' }} />}
-                            {isCamOff ? <VideoOff size={16} style={{ color: 'var(--color-danger)' }} /> : <Video size={16} style={{ color: 'var(--color-teal)' }} />}
+                            {isMuted ? <MicOff size={16} style={{ color: 'var(--color-danger)' }} /> : <Mic size={16} style={{ color: 'var(--color-primary)' }} />}
+                            {isCamOff ? <VideoOff size={16} style={{ color: 'var(--color-danger)' }} /> : <Video size={16} style={{ color: 'var(--color-primary)' }} />}
                           </div>
                         </div>
 
                         {/* Remote Members */}
                         {meetingParticipants.map(p => (
-                          <div key={p.userId || p.socketId} className="effect-3d" style={{
+                          <div key={p.socketId} className="effect-3d" style={{
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'space-between',
@@ -4835,8 +5273,8 @@ export default function App() {
                               </div>
                             </div>
                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                              {p.isMuted ? <MicOff size={16} style={{ color: 'var(--color-danger)' }} /> : <Mic size={16} style={{ color: 'var(--color-teal)' }} />}
-                              {p.isCamOff ? <VideoOff size={16} style={{ color: 'var(--color-danger)' }} /> : <Video size={16} style={{ color: 'var(--color-teal)' }} />}
+                              {p.isMuted ? <MicOff size={16} style={{ color: 'var(--color-danger)' }} /> : <Mic size={16} style={{ color: 'var(--color-primary)' }} />}
+                              {p.isCamOff ? <VideoOff size={16} style={{ color: 'var(--color-danger)' }} /> : <Video size={16} style={{ color: 'var(--color-primary)' }} />}
                             </div>
                           </div>
                         ))}
@@ -6308,7 +6746,7 @@ export default function App() {
                 <div style={{ display: 'flex', flexDirection: 'column', padding: '0.5rem' }}>
                   <span style={{ color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Room Join Link:</span>
                   <span style={{ fontFamily: 'monospace', fontSize: '0.8rem', wordBreak: 'break-all', padding: '0.35rem', backgroundColor: '#f1f5f9', borderRadius: '4px' }}>
-                    {`http://localhost:3000/join/${lastScheduledMeet.id}`}
+                    {`${window.location.origin}/?join=${lastScheduledMeet.id}&passcode=${lastScheduledMeet.passcode}`}
                   </span>
                 </div>
               </div>
@@ -6372,6 +6810,140 @@ export default function App() {
 
       {/* Render Authentication Modal if needed */}
       {renderAuthModal()}
+
+      {/* Join Meeting from Shared URL Invitation Modal */}
+      {urlJoinRoomId && (
+        <div className="modal-overlay" style={{ zIndex: 3000 }}>
+          <div className="modal-content effect-3d" style={{ maxWidth: '420px', padding: '2.5rem', position: 'relative' }}>
+            <button 
+              className="btn btn-secondary" 
+              style={{ position: 'absolute', top: '15px', right: '15px', padding: '0.25rem 0.5rem', minWidth: 'auto' }} 
+              onClick={() => setUrlJoinRoomId(null)}
+            >
+              ✕
+            </button>
+            <div className="auth-logo">
+              <div className="auth-logo-icon">
+                <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: '100%' }}>
+                  <path d="M 18 42 A 32 32 0 0 0 27 70" stroke="var(--primary)" strokeWidth="13" strokeLinecap="round" />
+                  <path d="M 24 67 A 32 32 0 0 0 76 67" stroke="var(--accent)" strokeWidth="13" />
+                  <path d="M 73 70 A 32 32 0 0 0 82 42" stroke="var(--danger)" strokeWidth="13" strokeLinecap="round" />
+                  <rect x="42" y="38" width="16" height="42" rx="8" fill="var(--secondary)" />
+                  <circle cx="50" cy="22" r="7.5" fill="var(--secondary)" />
+                </svg>
+              </div>
+              <span className="logo-text" style={{color: 'var(--text-primary)'}}>IntellMeet</span>
+            </div>
+            
+            <div>
+              <h2 className="auth-title" style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Join Meeting as Guest</h2>
+              <p className="auth-subtitle" style={{ marginBottom: '1.5rem' }}>Enter your details to join room <strong>{urlJoinRoomId}</strong></p>
+              
+              <div className="form-group" style={{ marginBottom: '1rem' }}>
+                <label className="form-label">Your Full Name</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  value={guestJoinName} 
+                  onChange={(e) => setGuestJoinName(e.target.value)} 
+                  placeholder="Enter your name to show other users" 
+                  required 
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                <label className="form-label">Passcode</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  value={urlJoinPasscode} 
+                  onChange={(e) => setUrlJoinPasscode(e.target.value)} 
+                  placeholder="Enter passcode if required" 
+                />
+              </div>
+
+              <button className="btn btn-primary w-full button-3d" onClick={handleJoinMeetingAsGuestFromUrl}>
+                Join Meeting Room
+              </button>
+              
+              <p style={{ textAlign: 'center', marginTop: '1.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                Have an account?{' '}
+                <span 
+                  style={{ color: 'var(--color-primary)', cursor: 'pointer', fontWeight: 600 }}
+                  onClick={() => {
+                    setUrlJoinRoomId(null);
+                    setShowAuthModal(true);
+                  }}
+                >
+                  Sign In
+                </span>
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Host Moderation: Waiting Room Requests banner */}
+      {isMeetingHost && waitingRequests.length > 0 && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 5000,
+          backgroundColor: 'var(--bg-primary)',
+          border: '2px solid var(--color-primary, #50a3a4)',
+          borderRadius: '12px',
+          boxShadow: 'var(--shadow-lg)',
+          padding: '1rem 1.5rem',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.75rem',
+          maxWidth: '450px',
+          width: '90%',
+          animation: 'slideDown 0.3s ease-out'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '1.25rem' }}>👤</span>
+            <span style={{ fontWeight: 'bold', color: 'var(--text-primary)', fontSize: '0.95rem' }}>
+              {waitingRequests.length} user{waitingRequests.length > 1 ? 's' : ''} waiting to join
+            </span>
+          </div>
+          
+          <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {waitingRequests.map((req) => (
+              <div key={req.socketId} style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                backgroundColor: 'var(--bg-secondary)',
+                padding: '0.5rem 0.75rem',
+                borderRadius: '8px',
+                border: '1px solid var(--color-border)'
+              }}>
+                <span style={{ fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+                  {req.username}
+                </span>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button 
+                    className="btn btn-secondary btn-sm" 
+                    style={{ padding: '0.25rem 0.5rem', minWidth: 'auto', backgroundColor: 'var(--color-danger, #f43f5e)', color: '#fff' }}
+                    onClick={() => handleDeclineUser(req.socketId)}
+                  >
+                    Decline
+                  </button>
+                  <button 
+                    className="btn btn-primary btn-sm" 
+                    style={{ padding: '0.25rem 0.5rem', minWidth: 'auto', color: '#fff' }}
+                    onClick={() => handleAdmitUser(req.socketId)}
+                  >
+                    Admit
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
     </div>
   );

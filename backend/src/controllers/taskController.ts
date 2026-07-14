@@ -1,7 +1,12 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { Task } from '../models/Task';
 
 export const createTask = async (req: Request, res: Response) => {
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({ message: 'Database connection error' });
+  }
+
   try {
     const task = new Task(req.body);
     await task.save();
@@ -12,6 +17,10 @@ export const createTask = async (req: Request, res: Response) => {
 };
 
 export const getTasks = async (req: Request, res: Response) => {
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({ message: 'Database connection error' });
+  }
+
   try {
     const tasks = await Task.find();
     res.json(tasks);
@@ -21,6 +30,10 @@ export const getTasks = async (req: Request, res: Response) => {
 };
 
 export const updateTask = async (req: Request, res: Response) => {
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({ message: 'Database connection error' });
+  }
+
   try {
     const { id } = req.params;
     const updateData = req.body;

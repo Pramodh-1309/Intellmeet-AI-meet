@@ -222,6 +222,23 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('notes-updated', notes);
   });
 
+  // Waiting Room Handlers
+  socket.on('request-to-join', (roomId, userInfo) => {
+    console.log(`[Socket] Request to join room ${roomId} received from guest:`, userInfo.username);
+    io.to(roomId).emit('join-request-received', {
+      socketId: socket.id,
+      ...userInfo
+    });
+  });
+
+  socket.on('admit-user', (targetSocketId) => {
+    io.to(targetSocketId).emit('join-admitted');
+  });
+
+  socket.on('decline-user', (targetSocketId) => {
+    io.to(targetSocketId).emit('join-declined');
+  });
+
   // WebRTC Signaling relays
   socket.on('webrtc-offer', (payload: { toSocketId: string; offer: any }) => {
     io.to(payload.toSocketId).emit('webrtc-offer', {
@@ -269,7 +286,35 @@ io.on('connection', (socket) => {
 
 // Database Connection
 const PORT = process.env.PORT || 5000;
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/intellmeet';
+let MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/intellmeet';
+
+// Auto-encode special characters (like '@') in password credentials if found raw
+if (MONGO_URI.startsWith('mongodb+srv://') || MONGO_URI.startsWith('mongodb://')) {
+  try {
+    const prefix = MONGO_URI.startsWith('mongodb+srv://') ? 'mongodb+srv://' : 'mongodb://';
+    const remaining = MONGO_URI.substring(prefix.length);
+    const lastAtIdx = remaining.lastIndexOf('@');
+    if (lastAtIdx !== -1) {
+      const credentials = remaining.substring(0, lastAtIdx);
+      const hostAndParams = remaining.substring(lastAtIdx + 1);
+      const colonIdx = credentials.indexOf(':');
+      if (colonIdx !== -1) {
+        const username = credentials.substring(0, colonIdx);
+        const password = credentials.substring(colonIdx + 1);
+        if (password.includes('@') || password.includes(':') || password.includes('/') || password.includes('+')) {
+          const encodedPassword = encodeURIComponent(decodeURIComponent(password));
+          MONGO_URI = `${prefix}${username}:${encodedPassword}@${hostAndParams}`;
+          console.log('MongoDB connection string credentials auto-encoded successfully.');
+        }
+      }
+    }
+  } catch (parseErr) {
+    console.warn('Failed to auto-parse and encode MongoDB URI:', parseErr);
+  }
+}
+
+// Disable Mongoose command buffering so queries fail instantly if connection is down
+mongoose.set('bufferCommands', false);
 
 mongoose.connect(MONGO_URI)
   .then(() => {
