@@ -317,6 +317,7 @@ export default function App() {
   const [isWaitingInRoom, setIsWaitingInRoom] = useState<boolean>(false);
   const [waitingRoomMessage, setWaitingRoomMessage] = useState<string>('Waiting for the host to let you in...');
   const [waitingRequests, setWaitingRequests] = useState<any[]>([]);
+  const [socketStatus, setSocketStatus] = useState<string>('Connecting');
 
   // User Profile Settings & webcam states
   const [userPhone, setUserPhone] = useState<string>('');
@@ -822,6 +823,7 @@ export default function App() {
 
     socket.on('connect', () => {
       console.log('Connected to socket, host state:', isMeetingHost);
+      setSocketStatus('Connected');
       if (isMeetingHost) {
         socket.emit('join-room', meetingId, participantInfo);
       } else {
@@ -829,6 +831,16 @@ export default function App() {
         setWaitingRoomMessage("Waiting for the host to admit you to the meeting...");
         socket.emit('request-to-join', meetingId, participantInfo);
       }
+    });
+
+    socket.on('connect_error', (err) => {
+      console.error('Socket connection error:', err);
+      setSocketStatus(`Error: ${err.message}`);
+    });
+
+    socket.on('disconnect', (reason) => {
+      console.log('Socket disconnected:', reason);
+      setSocketStatus(`Disconnected: ${reason}`);
     });
 
     socket.on('join-request-received', (request: any) => {
@@ -976,6 +988,7 @@ export default function App() {
       socket.disconnect();
       socketRef.current = null;
       setMeetingParticipants([]);
+      setSocketStatus('Connecting');
     };
   }, [inActiveMeeting, meetingId, isMeetingHost, username]);
 
@@ -1572,8 +1585,7 @@ export default function App() {
       }
     }
     
-    const isHost = match ? (match.host === guestJoinName.trim()) : false;
-    setIsMeetingHost(isHost);
+    setIsMeetingHost(false);
 
     setUsername(guestJoinName.trim());
     setGuestDisplayName(guestJoinName.trim());
@@ -4769,6 +4781,17 @@ export default function App() {
                   {activeMeetingPasscode && (
                     <span><b>Passcode:</b> {activeMeetingPasscode}</span>
                   )}
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <span style={{
+                      width: '8px',
+                      height: '8px',
+                      borderRadius: '50%',
+                      backgroundColor: socketStatus === 'Connected' ? '#10b981' : (socketStatus.startsWith('Error') || socketStatus.startsWith('Disconnected') ? '#ef4444' : '#f59e0b'),
+                      display: 'inline-block',
+                      boxShadow: socketStatus === 'Connected' ? '0 0 8px #10b981' : (socketStatus.startsWith('Error') || socketStatus.startsWith('Disconnected') ? '0 0 8px #ef4444' : '0 0 8px #f59e0b')
+                    }} />
+                    <b>Signal:</b> {socketStatus}
+                  </span>
                   <span><b>Join Link:</b> <a href={`${window.location.origin}/?join=${meetingId}&passcode=${activeMeetingPasscode}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>{`${window.location.origin}/?join=${meetingId}&passcode=${activeMeetingPasscode}`}</a></span>
                 </div>
               </div>
